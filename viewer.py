@@ -1,5 +1,6 @@
 import os
 import json
+import hmac
 import certifi
 from pathlib import Path
 from dotenv import load_dotenv
@@ -22,6 +23,46 @@ MONGO_DB = os.environ.get('MONGO_DB', 'damclubs')
 client = MongoClient(MONGO_URI, tlsCAFile=certifi.where(), serverSelectionTimeoutMS=15000)
 db = client[MONGO_DB]
 collection = db['clubs']
+
+
+def _viewer_password_from_config() -> str:
+    """Optionele toegangscode: eerst omgevingsvariabele (.env), anders Streamlit Secrets."""
+    p = (os.environ.get('VIEWER_PASSWORD') or '').strip()
+    if p:
+        return p
+    try:
+        sec = getattr(st, 'secrets', None)
+        if sec:
+            p2 = sec.get('VIEWER_PASSWORD') or sec.get('STREAMLIT_VIEWER_PASSWORD')
+            return str(p2 or '').strip()
+    except Exception:
+        pass
+    return ''
+
+
+def _viewer_password_matches(entered: str, correct: str) -> bool:
+    if len(entered) != len(correct):
+        return False
+    return hmac.compare_digest(entered.encode('utf-8'), correct.encode('utf-8'))
+
+
+def _ensure_viewer_password() -> None:
+    """Blokkeer de app tot de juiste code is ingevoerd (alleen als VIEWER_PASSWORD is gezet)."""
+    pwd = _viewer_password_from_config()
+    if not pwd:
+        return
+    if st.session_state.get('_viewer_auth_ok'):
+        return
+    st.title('Draughts4All — toegang')
+    st.caption('Voer de toegangscode in om de viewer te openen.')
+    entered = st.text_input('Toegangscode', type='password', key='viewer_password_input')
+    if st.button('Doorgaan', type='primary'):
+        if _viewer_password_matches(entered, pwd):
+            st.session_state['_viewer_auth_ok'] = True
+            st.rerun()
+        else:
+            st.error('Onjuiste code.')
+    st.stop()
 
 
 def _is_obfuscated_email(value):
@@ -462,6 +503,7 @@ def render_clubs(map_height):
                             st.error(f'Kon niet opslaan: {exc}')
 
 st.set_page_config(page_title='Clubs & scholen', layout='wide')
+_ensure_viewer_password()
 
 try:
     client.admin.command('ping')
@@ -470,6 +512,10 @@ except Exception as exc:
     st.stop()
 
 st.title('Clubs & scholen')
+if _viewer_password_from_config() and st.session_state.get('_viewer_auth_ok'):
+    if st.sidebar.button('Toegang wissen', help='Verwijder de sessiecode op dit apparaat'):
+        st.session_state.pop('_viewer_auth_ok', None)
+        st.rerun()
 weergave = st.sidebar.radio('Menu', ['Damclubs', 'Scholen'], horizontal=True)
 map_height = st.sidebar.slider('Kaart hoogte (pixels)', 300, 900, 520, key='map_height_shared')
 

@@ -18,6 +18,10 @@ git push -u origin main
 ```toml
 MONGO_URI = "mongodb+srv://USER:PASS@cluster.xxxxx.mongodb.net/?retryWrites=true&w=majority"
 MONGO_DB = "damclubs"
+
+# Optioneel: eenvoudige toegangscode voor de hele viewer (gedeeld geheim).
+# Weglaten = geen wachtwoordscherm.
+VIEWER_PASSWORD = "jouw-geheime-code"
 ```
 
 Gebruik in de URI een database-user met alleen lees- (en eventueel beperkte schrijf-)rechten op `clubs` en `schools`.
@@ -32,5 +36,6 @@ Gebruik in de URI een database-user met alleen lees- (en eventueel beperkte schr
 pip install -r requirements.txt
 export MONGO_URI="..."   # of .env naast viewer.py
 export MONGO_DB=damclubs
+export VIEWER_PASSWORD="optioneel-lokaal"   # of in .env
 streamlit run viewer.py
 ```
