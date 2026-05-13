@@ -1,0 +1,1138 @@
+[
+    {
+        "provincie": "DDB",
+        "plaats": "Gramsbergen",
+        "naam": "De Vechtstreek Oosterveen",
+        "secretariaat": "E. Schuttert",
+        "clublokaal": "De Binder",
+        "details": {}
+    },
+    {
+        "provincie": "DDB",
+        "plaats": "Emmen",
+        "naam": "Emmen",
+        "secretariaat": "G. Aalderink",
+        "clublokaal": "De Schans",
+        "details": {}
+    },
+    {
+        "provincie": "DDB",
+        "plaats": "Hoogeveen",
+        "naam": "HDC Hoogeveen",
+        "secretariaat": "J. van Gijssel",
+        "clublokaal": "Het Knooppunt",
+        "details": {}
+    },
+    {
+        "provincie": "DDB",
+        "plaats": "Hijken",
+        "naam": "Hijken DTC",
+        "secretariaat": "R. Smit",
+        "clublokaal": "De Dorpshoeve",
+        "details": {}
+    },
+    {
+        "provincie": "DDB",
+        "plaats": "Beilen",
+        "naam": "Houdt Stand",
+        "secretariaat": "J.A. van der Laan",
+        "clublokaal": "De Raat",
+        "details": {}
+    },
+    {
+        "provincie": "DDB",
+        "plaats": "Vries",
+        "naam": "Vries",
+        "secretariaat": "J. Hofman",
+        "clublokaal": "De Pan",
+        "details": {}
+    },
+    {
+        "provincie": "DDB",
+        "plaats": "Zuidwolde",
+        "naam": "Zuidwolde",
+        "secretariaat": "C. Groote",
+        "clublokaal": "De Baron",
+        "details": {}
+    },
+    {
+        "provincie": "DZHZ",
+        "plaats": "Alblasserdam",
+        "naam": "Alblasserdam",
+        "secretariaat": "R. Groenendijk",
+        "clublokaal": "China Town",
+        "details": {}
+    },
+    {
+        "provincie": "DZHZ",
+        "plaats": "Herwijnen",
+        "naam": "Amicitia",
+        "secretariaat": "J. van Krieken",
+        "clublokaal": "Dorpshuis De Poort",
+        "details": {}
+    },
+    {
+        "provincie": "DZHZ",
+        "plaats": "Strijen",
+        "naam": "De Kroonschijf",
+        "secretariaat": "A.C. Kok",
+        "clublokaal": "Verenigingsgebouw",
+        "details": {}
+    },
+    {
+        "provincie": "DZHZ",
+        "plaats": "Brandwijk",
+        "naam": "De Waarddammers",
+        "secretariaat": "A.P. de Hek",
+        "clublokaal": "Verenigingsgebouw De Overstap",
+        "details": {}
+    },
+    {
+        "provincie": "DZHZ",
+        "plaats": "Zwijndrecht",
+        "naam": "Denk en ZDV",
+        "secretariaat": "A. de Bruijn",
+        "clublokaal": "Zalencentrum 't Spatje",
+        "details": {}
+    },
+    {
+        "provincie": "DZHZ",
+        "plaats": "Hardinxveld-Giessendam",
+        "naam": "Denk en Zet Hardinxveld",
+        "secretariaat": "W. Kalis",
+        "clublokaal": "Het Spoor",
+        "details": {}
+    },
+    {
+        "provincie": "DZHZ",
+        "plaats": "Woudrichem",
+        "naam": "DEZ Woudrichem",
+        "secretariaat": "B. Vink",
+        "clublokaal": "OVO Gebouw",
+        "details": {}
+    },
+    {
+        "provincie": "DZHZ",
+        "plaats": "Nieuwland",
+        "naam": "NDV",
+        "secretariaat": "A. Haag",
+        "clublokaal": "Brandpunt",
+        "details": {}
+    },
+    {
+        "provincie": "GDB",
+        "plaats": "Apeldoorn",
+        "naam": "Apeldoorn",
+        "secretariaat": "F.E. van Amersfoort",
+        "clublokaal": "Denksportcentrum Noord",
+        "details": {}
+    },
+    {
+        "provincie": "GDB",
+        "plaats": "Barneveld",
+        "naam": "BDSV",
+        "secretariaat": "K. Hendriksen",
+        "clublokaal": "Speellokaal BDSV",
+        "details": {}
+    },
+    {
+        "provincie": "GDB",
+        "plaats": "Brummen",
+        "naam": "BDV",
+        "secretariaat": "J.H.J. Cijnssen",
+        "clublokaal": "SWB Plein 5",
+        "details": {}
+    },
+    {
+        "provincie": "GDB",
+        "plaats": "Arnhem",
+        "naam": "CTD Arnhem",
+        "secretariaat": "B. Terwel",
+        "clublokaal": "Wijkcentrum Vredenburcht",
+        "details": {}
+    },
+    {
+        "provincie": "GDB",
+        "plaats": "Sinderen",
+        "naam": "Damcombinatie DSV",
+        "secretariaat": "M. Westerveld",
+        "clublokaal": "Buurtschapshuis",
+        "details": {}
+    },
+    {
+        "provincie": "GDB",
+        "plaats": "Nijmegen",
+        "naam": "Damcombinatie Nijmegen",
+        "secretariaat": "E. Sanders",
+        "clublokaal": "Wijkcentrum Titus Brandsma",
+        "details": {}
+    },
+    {
+        "provincie": "GDB",
+        "plaats": "Vorden/Doetinchem",
+        "naam": "Dammers uit Oost",
+        "secretariaat": "J.R. Zweerink",
+        "clublokaal": "Sporthal De Bongerd",
+        "details": {}
+    },
+    {
+        "provincie": "GDB",
+        "plaats": "Huissen",
+        "naam": "Damvereniging VBI",
+        "secretariaat": "R.A.A. Veenings",
+        "clublokaal": "'t Koelhuis",
+        "details": {}
+    },
+    {
+        "provincie": "GDB",
+        "plaats": "Ede",
+        "naam": "De Kroonschijf",
+        "secretariaat": "A. van Harn",
+        "clublokaal": "Korenschoof",
+        "details": {}
+    },
+    {
+        "provincie": "GDB",
+        "plaats": "Lunteren",
+        "naam": "DES Lunteren",
+        "secretariaat": "M. Hendriksen",
+        "clublokaal": "De Schuifeldam",
+        "details": {}
+    },
+    {
+        "provincie": "GDB",
+        "plaats": "Laren",
+        "naam": "DEZ Laren",
+        "secretariaat": "J.H. Beuzel",
+        "clublokaal": "Kulturhus t Kruispunt",
+        "details": {}
+    },
+    {
+        "provincie": "GDB",
+        "plaats": "Eibergen",
+        "naam": "DIOS Achterhoek",
+        "secretariaat": "P. Ribbers",
+        "clublokaal": "Trefpunt",
+        "details": {}
+    },
+    {
+        "provincie": "GDB",
+        "plaats": "Almen",
+        "naam": "DSV Ons Genoegen",
+        "secretariaat": "P. Staal",
+        "clublokaal": "Ons Huis Almen",
+        "details": {}
+    },
+    {
+        "provincie": "GDB",
+        "plaats": "Ederveen",
+        "naam": "Ederveen",
+        "secretariaat": "P.C.H. Brinkman",
+        "clublokaal": "Dorpshuis Ederveen",
+        "details": {}
+    },
+    {
+        "provincie": "GDB",
+        "plaats": "Groesbeek",
+        "naam": "Groesbeek",
+        "secretariaat": "E. de Bruin",
+        "clublokaal": "De Mallemolen",
+        "details": {}
+    },
+    {
+        "provincie": "GDB",
+        "plaats": "Harderwijk",
+        "naam": "Harderwijk",
+        "secretariaat": "A.V. Elgersma",
+        "clublokaal": "MFC De Bogen",
+        "details": {}
+    },
+    {
+        "provincie": "GDB",
+        "plaats": "Hengelo",
+        "naam": "Hengelo",
+        "secretariaat": "T. Ortsen",
+        "clublokaal": "Ons Huis",
+        "details": {}
+    },
+    {
+        "provincie": "GDB",
+        "plaats": "Lent",
+        "naam": "Lent",
+        "secretariaat": "J.W.T.J. Janssen",
+        "clublokaal": "Damclub Lent",
+        "details": {}
+    },
+    {
+        "provincie": "GDB",
+        "plaats": "Haalderen",
+        "naam": "Ons Genoegen",
+        "secretariaat": "A.J. Janssen",
+        "clublokaal": "Dorpshuis De Tichel",
+        "details": {}
+    },
+    {
+        "provincie": "GDB",
+        "plaats": "Terborg",
+        "naam": "Oude IJsselstreek",
+        "secretariaat": "B.F. Renting",
+        "clublokaal": "De Huiskamer",
+        "details": {}
+    },
+    {
+        "provincie": "GDB",
+        "plaats": "Putten",
+        "naam": "PDC",
+        "secretariaat": "J. van de Werfhorst",
+        "clublokaal": "Sportpark SDC Putten",
+        "details": {}
+    },
+    {
+        "provincie": "GDB",
+        "plaats": "Winterswijk",
+        "naam": "WDV",
+        "secretariaat": "F. ten Hagen",
+        "clublokaal": "Speeltuin Hakkelerkamp",
+        "details": {}
+    },
+    {
+        "provincie": "GDB",
+        "plaats": "Wageningen",
+        "naam": "WSDV",
+        "secretariaat": "H. Kromhout",
+        "clublokaal": "De Doorbraak",
+        "details": {}
+    },
+    {
+        "provincie": "GDB",
+        "plaats": "Zutphen/Warnsveld",
+        "naam": "Zutphen/Warnsveld",
+        "secretariaat": "R. Kampman",
+        "clublokaal": "Speellokaal Zutphen-Warnsveld",
+        "details": {}
+    },
+    {
+        "provincie": "GDB",
+        "plaats": "Malden",
+        "naam": "Zwart-Wit '86",
+        "secretariaat": "J. Haage",
+        "clublokaal": "De Horst",
+        "details": {}
+    },
+    {
+        "provincie": "PFDB",
+        "plaats": "Britsum",
+        "naam": "BEGB Britsum",
+        "secretariaat": "P. Dijkstra",
+        "clublokaal": "Britsenburg",
+        "details": {}
+    },
+    {
+        "provincie": "PFDB",
+        "plaats": "Bolsward Workum",
+        "naam": "Bolsward Workum Combinatie",
+        "secretariaat": "K. Herder",
+        "clublokaal": "De Klameare",
+        "details": {}
+    },
+    {
+        "provincie": "PFDB",
+        "plaats": "Oenkerk",
+        "naam": "Damcombinatie Fryslân",
+        "secretariaat": "J. Algra",
+        "clublokaal": "Kafee It Wapen Fan Fryslân",
+        "details": {}
+    },
+    {
+        "provincie": "PFDB",
+        "plaats": "Emmeloord",
+        "naam": "Damkring Emmeloord",
+        "secretariaat": "IJ. Haven",
+        "clublokaal": "De Ontmoeting",
+        "details": {}
+    },
+    {
+        "provincie": "PFDB",
+        "plaats": "Dokkum",
+        "naam": "Dokkum Rinsumageest",
+        "secretariaat": "D.A. Zijlstra",
+        "clublokaal": "Hotel Van der Meer",
+        "details": {}
+    },
+    {
+        "provincie": "PFDB",
+        "plaats": "Heerenveen",
+        "naam": "Heerenveen",
+        "secretariaat": "T. Smedinga",
+        "clublokaal": "Hof van Schoterland",
+        "details": {}
+    },
+    {
+        "provincie": "PFDB",
+        "plaats": "Leeuwarden",
+        "naam": "Huizum",
+        "secretariaat": "B. Scholma",
+        "clublokaal": "Dorpshuis Ien en Mien",
+        "details": {}
+    },
+    {
+        "provincie": "PFDB",
+        "plaats": "Lemmer",
+        "naam": "Lemmer",
+        "secretariaat": "H. Poepjes",
+        "clublokaal": "Het Baken",
+        "details": {}
+    },
+    {
+        "provincie": "PFDB",
+        "plaats": "Drachten",
+        "naam": "Oerterp-Drachten",
+        "secretariaat": "H. Veenstra",
+        "clublokaal": "MFC De Wier",
+        "details": {}
+    },
+    {
+        "provincie": "PFDB",
+        "plaats": "Sneek",
+        "naam": "SDC",
+        "secretariaat": "D.T. Edelenbos",
+        "clublokaal": "Schuttersheuvel",
+        "details": {}
+    },
+    {
+        "provincie": "PFDB",
+        "plaats": "Steenwijk",
+        "naam": "Steenwijk '36",
+        "secretariaat": "A. Robbertsen",
+        "clublokaal": "De Karre",
+        "details": {}
+    },
+    {
+        "provincie": "PFDB",
+        "plaats": "Surhuisterveen",
+        "naam": "Troch Tinken Sterk",
+        "secretariaat": "A.T. Oosterhof",
+        "clublokaal": "Café de Haven",
+        "details": {}
+    },
+    {
+        "provincie": "PFDB",
+        "plaats": "Urk",
+        "naam": "Urk aan zet",
+        "secretariaat": "J. Snijder",
+        "clublokaal": "PV Tot Weerziens",
+        "details": {}
+    },
+    {
+        "provincie": "PGD",
+        "plaats": "Groningen",
+        "naam": "Het Noorden",
+        "secretariaat": "D. Staal",
+        "clublokaal": "Jannes vd Wal Denksportcentrum",
+        "details": {}
+    },
+    {
+        "provincie": "PGD",
+        "plaats": "Roden",
+        "naam": "Roden / Leek",
+        "secretariaat": "M. Matthezing",
+        "clublokaal": "Sportcentrum Leek",
+        "details": {}
+    },
+    {
+        "provincie": "PGD",
+        "plaats": "Warffum",
+        "naam": "Warffum",
+        "secretariaat": "N.R. Werkman",
+        "clublokaal": "Huiskamercafé",
+        "details": {}
+    },
+    {
+        "provincie": "PGD",
+        "plaats": "Winschoten",
+        "naam": "Winschoten",
+        "secretariaat": "J. Mulder",
+        "clublokaal": "SV Bovenburen",
+        "details": {}
+    },
+    {
+        "provincie": "PLDB",
+        "plaats": "Geleen",
+        "naam": "CEMA De Vaste Zet",
+        "secretariaat": "M. van Gortel",
+        "clublokaal": "Rector Raevenhuis",
+        "details": {}
+    },
+    {
+        "provincie": "PLDB",
+        "plaats": "Heerlen",
+        "naam": "DIOS Eureka",
+        "secretariaat": "M. Werrebrouck",
+        "clublokaal": "De Weijenberg",
+        "details": {}
+    },
+    {
+        "provincie": "PLDB",
+        "plaats": "Heerlen",
+        "naam": "JDV Heerlen",
+        "secretariaat": "B.K.A. Koullen",
+        "clublokaal": "",
+        "details": {}
+    },
+    {
+        "provincie": "PLDB",
+        "plaats": "Maastricht",
+        "naam": "Raes DC Maastricht",
+        "secretariaat": "L.G. Damen",
+        "clublokaal": "Café Aajd Vroenhove",
+        "details": {}
+    },
+    {
+        "provincie": "PLDB",
+        "plaats": "Schaesberg",
+        "naam": "Rest. Hong Kong/DVS",
+        "secretariaat": "S. Jansen",
+        "clublokaal": "Parasol",
+        "details": {}
+    },
+    {
+        "provincie": "PLDB",
+        "plaats": "Roermond",
+        "naam": "Roermond",
+        "secretariaat": "J. Sijbers",
+        "clublokaal": "Café-zaal De Ster",
+        "details": {}
+    },
+    {
+        "provincie": "PNDB",
+        "plaats": "Sint Michielsgestel",
+        "naam": "D'Amateurs",
+        "secretariaat": "J.T.N.G. Wilsens",
+        "clublokaal": "Meander (ingang 2)",
+        "details": {}
+    },
+    {
+        "provincie": "PNDB",
+        "plaats": "Tilburg",
+        "naam": "Damcombinatie Tilburg/Eindhoven",
+        "secretariaat": "F. Swagemakers",
+        "clublokaal": "Boerke Mutsaers",
+        "details": {}
+    },
+    {
+        "provincie": "PNDB",
+        "plaats": "Roosendaal",
+        "naam": "De Schijf",
+        "secretariaat": "C. Pot",
+        "clublokaal": "Buurthuis Keijenburg",
+        "details": {}
+    },
+    {
+        "provincie": "PNDB",
+        "plaats": "Oudenbosch",
+        "naam": "De Variant",
+        "secretariaat": "A.C. Vervoort",
+        "clublokaal": "De Postduif",
+        "details": {}
+    },
+    {
+        "provincie": "PNDB",
+        "plaats": "Uden",
+        "naam": "DOG",
+        "secretariaat": "H.J.F. van der Heijden",
+        "clublokaal": "De Balans",
+        "details": {}
+    },
+    {
+        "provincie": "PNDB",
+        "plaats": "Asten",
+        "naam": "EAD Asten",
+        "secretariaat": "J.G.M. Martens",
+        "clublokaal": "Hotel Nobis",
+        "details": {}
+    },
+    {
+        "provincie": "PNDB",
+        "plaats": "Rosmalen",
+        "naam": "Heijmans Excelsior",
+        "secretariaat": "R. van Oosterhout",
+        "clublokaal": "Centrum De Biechten",
+        "details": {}
+    },
+    {
+        "provincie": "PNDB",
+        "plaats": "Helden",
+        "naam": "HSDV",
+        "secretariaat": "N. Grubben",
+        "clublokaal": "Dorpscentrum Kerkeböske",
+        "details": {}
+    },
+    {
+        "provincie": "PNDB",
+        "plaats": "Sint Oedenrode",
+        "naam": "RDS",
+        "secretariaat": "M.J.C. van Berlo",
+        "clublokaal": "Dommelzicht",
+        "details": {}
+    },
+    {
+        "provincie": "PNDB",
+        "plaats": "Dongen",
+        "naam": "Rompa Leder DAM",
+        "secretariaat": "B 't Hoen",
+        "clublokaal": "Salamander",
+        "details": {}
+    },
+    {
+        "provincie": "PNHD",
+        "plaats": "Amsterdam",
+        "naam": "020",
+        "secretariaat": "K. Kroon",
+        "clublokaal": "Wijkcentrum Alleman",
+        "details": {}
+    },
+    {
+        "provincie": "PNHD",
+        "plaats": "Diemen",
+        "naam": "DDV",
+        "secretariaat": "R. van Westerloo",
+        "clublokaal": "Sporthal Diemen",
+        "details": {}
+    },
+    {
+        "provincie": "PNHD",
+        "plaats": "Enkhuizen",
+        "naam": "Enkhuizer Damclub",
+        "secretariaat": "H. van der Veen",
+        "clublokaal": "De Hoekstaan",
+        "details": {}
+    },
+    {
+        "provincie": "PNHD",
+        "plaats": "Haarlem",
+        "naam": "Haarlemse Damclub",
+        "secretariaat": "R. Tielrooij",
+        "clublokaal": "Denksportcentrum 't Spaerne",
+        "details": {}
+    },
+    {
+        "provincie": "PNHD",
+        "plaats": "Den Helder",
+        "naam": "Helderse Dam Club",
+        "secretariaat": "W. van Tiel",
+        "clublokaal": "",
+        "details": {}
+    },
+    {
+        "provincie": "PNHD",
+        "plaats": "IJmuiden",
+        "naam": "IJmuiden",
+        "secretariaat": "C. Sleutel",
+        "clublokaal": "Jan Campertschool",
+        "details": {}
+    },
+    {
+        "provincie": "PNHD",
+        "plaats": "De Kwakel",
+        "naam": "Kunst en Genoegen",
+        "secretariaat": "A. Voorn",
+        "clublokaal": "Het Fort",
+        "details": {}
+    },
+    {
+        "provincie": "PNHD",
+        "plaats": "Den Ilp",
+        "naam": "Ons Genoegen",
+        "secretariaat": "W. Fennema",
+        "clublokaal": "De Wije Ilp",
+        "details": {}
+    },
+    {
+        "provincie": "PNHD",
+        "plaats": "Oosterend",
+        "naam": "Oosterend",
+        "secretariaat": "P.J. Bakelaar",
+        "clublokaal": "Dorpshuis De Bijenkorf",
+        "details": {}
+    },
+    {
+        "provincie": "PNHD",
+        "plaats": "Purmerend",
+        "naam": "Purmerend '66",
+        "secretariaat": "D. Lust",
+        "clublokaal": "Wijkplein Where",
+        "details": {}
+    },
+    {
+        "provincie": "PNHD",
+        "plaats": "Heerhugowaard",
+        "naam": "SNA",
+        "secretariaat": "M.T. Tesselaar",
+        "clublokaal": "Huygens College",
+        "details": {}
+    },
+    {
+        "provincie": "PNHD",
+        "plaats": "Amsterdam",
+        "naam": "VAD",
+        "secretariaat": "Kees Binnenkade",
+        "clublokaal": "Dorpshuis \"De Wije Ilp\"",
+        "details": {}
+    },
+    {
+        "provincie": "PNHD",
+        "plaats": "Zaandam",
+        "naam": "Zaanstreek",
+        "secretariaat": "M. Berends",
+        "clublokaal": "Sporthal De Greep",
+        "details": {}
+    },
+    {
+        "provincie": "PODB",
+        "plaats": "Almelo",
+        "naam": "Almelo",
+        "secretariaat": "M.J. van Hofwegen",
+        "clublokaal": "IJsbaan Almelo",
+        "details": {}
+    },
+    {
+        "provincie": "PODB",
+        "plaats": "Borne",
+        "naam": "Bornse Dam Vereniging",
+        "secretariaat": "B.C.H. Venneker",
+        "clublokaal": "De Fontein",
+        "details": {}
+    },
+    {
+        "provincie": "PODB",
+        "plaats": "Deventer",
+        "naam": "DDC Deventer",
+        "secretariaat": "P. Olde Hanhof",
+        "clublokaal": "Hof van Colmschate",
+        "details": {}
+    },
+    {
+        "provincie": "PODB",
+        "plaats": "Dedemsvaart",
+        "naam": "DDD",
+        "secretariaat": "L.A.G. Hazen",
+        "clublokaal": "De Baron",
+        "details": {}
+    },
+    {
+        "provincie": "PODB",
+        "plaats": "Den Ham",
+        "naam": "De Hammerdammer",
+        "secretariaat": "G.W. van der Voet",
+        "clublokaal": "Zalencentrum Harwig",
+        "details": {}
+    },
+    {
+        "provincie": "PODB",
+        "plaats": "Zwartsluis",
+        "naam": "De Schuivende Schijf",
+        "secretariaat": "W. Hammer",
+        "clublokaal": "'t Ende",
+        "details": {}
+    },
+    {
+        "provincie": "PODB",
+        "plaats": "Hattem",
+        "naam": "DEZ/NGKZ",
+        "secretariaat": "A. Beekman",
+        "clublokaal": "De Bouwakker",
+        "details": {}
+    },
+    {
+        "provincie": "PODB",
+        "plaats": "Dronten",
+        "naam": "Dronten",
+        "secretariaat": "J. Kip",
+        "clublokaal": "Denksportcentrum Dronten",
+        "details": {}
+    },
+    {
+        "provincie": "PODB",
+        "plaats": "Enschede",
+        "naam": "EDC Enschede",
+        "secretariaat": "L.W. Haan",
+        "clublokaal": "Speeltuinvereniging Voortsweg",
+        "details": {}
+    },
+    {
+        "provincie": "PODB",
+        "plaats": "Rhaan",
+        "naam": "Elen en Rhaan",
+        "secretariaat": "J. Bargmann",
+        "clublokaal": "Jan Barbierschool",
+        "details": {}
+    },
+    {
+        "provincie": "PODB",
+        "plaats": "Wapenveld",
+        "naam": "Eye-T Webdesign Wapenveld",
+        "secretariaat": "G. van Renselaar",
+        "clublokaal": "De Rots",
+        "details": {}
+    },
+    {
+        "provincie": "PODB",
+        "plaats": "Heino",
+        "naam": "Hartholt Olie",
+        "secretariaat": "M.G.M. Schotman",
+        "clublokaal": "Roekenest",
+        "details": {}
+    },
+    {
+        "provincie": "PODB",
+        "plaats": "Lelystad",
+        "naam": "Lelystad",
+        "secretariaat": "B. Zijlstra",
+        "clublokaal": "Het Palet",
+        "details": {}
+    },
+    {
+        "provincie": "PODB",
+        "plaats": "Nijverdal",
+        "naam": "Nijverdal",
+        "secretariaat": "H. Hoonhorst",
+        "clublokaal": "Postduivenver Vitesse",
+        "details": {}
+    },
+    {
+        "provincie": "PODB",
+        "plaats": "Genemuiden",
+        "naam": "O&O",
+        "secretariaat": "E. Meiresonne",
+        "clublokaal": "Hotel Zwartewater",
+        "details": {}
+    },
+    {
+        "provincie": "PODB",
+        "plaats": "Kampen",
+        "naam": "SSS",
+        "secretariaat": "A.J. Heikoop",
+        "clublokaal": "Wijkgebouw Reyersdam",
+        "details": {}
+    },
+    {
+        "provincie": "PODB",
+        "plaats": "Hengelo",
+        "naam": "Twente's Eerste",
+        "secretariaat": "G.J. van den Berg",
+        "clublokaal": "Denksportcentrum",
+        "details": {}
+    },
+    {
+        "provincie": "PODB",
+        "plaats": "Wierden",
+        "naam": "Wierden",
+        "secretariaat": "J.M. Dollen",
+        "clublokaal": "Ontmoetingscentrum Wierden",
+        "details": {}
+    },
+    {
+        "provincie": "PODB",
+        "plaats": "Westerhaar",
+        "naam": "Witte van Moort",
+        "secretariaat": "G.J.W. Mollink",
+        "clublokaal": "Clubgebouw Witte van Moort",
+        "details": {}
+    },
+    {
+        "provincie": "PODB",
+        "plaats": "Zwolle",
+        "naam": "Zwolle",
+        "secretariaat": "P. van der Velden",
+        "clublokaal": "De Bestevaer",
+        "details": {}
+    },
+    {
+        "provincie": "PZDB",
+        "plaats": "Aagtekerke",
+        "naam": "Aagtekerke",
+        "secretariaat": "P. Sterrenburg",
+        "clublokaal": "Amicitia",
+        "details": {}
+    },
+    {
+        "provincie": "PZDB",
+        "plaats": "Oost-Souburg",
+        "naam": "Aris de Heer",
+        "secretariaat": "J. van 't Padje",
+        "clublokaal": "De Blazer",
+        "details": {}
+    },
+    {
+        "provincie": "PZDB",
+        "plaats": "Bergen op Zoom",
+        "naam": "BDV",
+        "secretariaat": "R.A. Dusebout",
+        "clublokaal": "",
+        "details": {}
+    },
+    {
+        "provincie": "PZDB",
+        "plaats": "Tholen",
+        "naam": "De Eendracht",
+        "secretariaat": "J.A. van Akkeren",
+        "clublokaal": "Centrum Meulvliet",
+        "details": {}
+    },
+    {
+        "provincie": "PZDB",
+        "plaats": "Middelharnis",
+        "naam": "DEZ Middelharnis",
+        "secretariaat": "G. Noteboom",
+        "clublokaal": "Den Hoog Caemer",
+        "details": {}
+    },
+    {
+        "provincie": "PZDB",
+        "plaats": "Goes",
+        "naam": "GDC",
+        "secretariaat": "C.L. Boot",
+        "clublokaal": "De Driehoek",
+        "details": {}
+    },
+    {
+        "provincie": "PZDB",
+        "plaats": "Vlissingen",
+        "naam": "Lammerenburg",
+        "secretariaat": "L. van Schagen",
+        "clublokaal": "De Lammerenburcht",
+        "details": {}
+    },
+    {
+        "provincie": "PZDB",
+        "plaats": "Middelburg",
+        "naam": "Middelburg",
+        "secretariaat": "D. Kasse",
+        "clublokaal": "Getij",
+        "details": {}
+    },
+    {
+        "provincie": "PZDB",
+        "plaats": "'s-Gravenpolder",
+        "naam": "PWG 's-Gravenpolder",
+        "secretariaat": "J. van der Horst-Ringelberg",
+        "clublokaal": "Dorpshuis Ons Dorpsleven",
+        "details": {}
+    },
+    {
+        "provincie": "PZDB",
+        "plaats": "Oostburg",
+        "naam": "Zeeuws-Vlaanderen",
+        "secretariaat": "T. Oosthoek",
+        "clublokaal": "TV Oostburg",
+        "details": {}
+    },
+    {
+        "provincie": "UPDB",
+        "plaats": "Amersfoort",
+        "naam": "ADG",
+        "secretariaat": "C. Strooper",
+        "clublokaal": "Wijkcentrum Het Klokhuis",
+        "details": {}
+    },
+    {
+        "provincie": "UPDB",
+        "plaats": "Austerlitz",
+        "naam": "Austerlitz",
+        "secretariaat": "H.J. Keereweer",
+        "clublokaal": "'t Trefpunt Austerlitz",
+        "details": {}
+    },
+    {
+        "provincie": "UPDB",
+        "plaats": "Baarn",
+        "naam": "Baarn Soest",
+        "secretariaat": "A.A.M. van der Ploeg",
+        "clublokaal": "Rode Kruisgebouw",
+        "details": {}
+    },
+    {
+        "provincie": "UPDB",
+        "plaats": "Woudenberg",
+        "naam": "DAWO",
+        "secretariaat": "D.C. van Setten",
+        "clublokaal": "Buurtvereniging 't Spoor",
+        "details": {}
+    },
+    {
+        "provincie": "UPDB",
+        "plaats": "Baarn/Bunschoten",
+        "naam": "Gooi & Eemland",
+        "secretariaat": "B. Roest",
+        "clublokaal": "Arcana",
+        "details": {}
+    },
+    {
+        "provincie": "UPDB",
+        "plaats": "Nieuwerbrug",
+        "naam": "Het Groene Hart",
+        "secretariaat": "H. Loots",
+        "clublokaal": "Wierickehuis",
+        "details": {}
+    },
+    {
+        "provincie": "UPDB",
+        "plaats": "Hilversum",
+        "naam": "Hilversum",
+        "secretariaat": "W.G. Vlooswijk",
+        "clublokaal": "De Zoutkeet",
+        "details": {}
+    },
+    {
+        "provincie": "UPDB",
+        "plaats": "Loenen a/d Vecht",
+        "naam": "LDV",
+        "secretariaat": "E. Dubelaar",
+        "clublokaal": "'t Web",
+        "details": {}
+    },
+    {
+        "provincie": "UPDB",
+        "plaats": "Utrecht",
+        "naam": "Ons Genoegen Utrecht",
+        "secretariaat": "A.D. van Mourik",
+        "clublokaal": "Buurtcentrum De Pijler",
+        "details": {}
+    },
+    {
+        "provincie": "UPDB",
+        "plaats": "Utrecht",
+        "naam": "UDG-Vriendenkring",
+        "secretariaat": "P. de Heus",
+        "clublokaal": "Buurtcentrum De Pijler",
+        "details": {}
+    },
+    {
+        "provincie": "UPDB",
+        "plaats": "IJsselstein",
+        "naam": "Zenderstad",
+        "secretariaat": "K.J. van der Horst",
+        "clublokaal": "De Oase",
+        "details": {}
+    },
+    {
+        "provincie": "ZHDB",
+        "plaats": "Alphen aan den Rijn",
+        "naam": "ADC",
+        "secretariaat": "R.C. van Diggele",
+        "clublokaal": "Wijkcentrum Kerk en Zanen",
+        "details": {}
+    },
+    {
+        "provincie": "ZHDB",
+        "plaats": "Gouda",
+        "naam": "Damlust",
+        "secretariaat": "G.P. van der Wouden",
+        "clublokaal": "Biljart en Denksportcentrum",
+        "details": {}
+    },
+    {
+        "provincie": "ZHDB",
+        "plaats": "Den Haag",
+        "naam": "De Doorzetters",
+        "secretariaat": "Jaap van Hal",
+        "clublokaal": "Dr. J.A. Gerth van Wijkschool",
+        "details": {}
+    },
+    {
+        "provincie": "ZHDB",
+        "plaats": "Reeuwijk",
+        "naam": "DEZ Reeuwijk",
+        "secretariaat": "M.A. Groenendijk-Bos",
+        "clublokaal": "Zalencentrum De Brug",
+        "details": {}
+    },
+    {
+        "provincie": "ZHDB",
+        "plaats": "Delft",
+        "naam": "DOS Delft",
+        "secretariaat": "J.J.T. Eekhout",
+        "clublokaal": "DUWO Denksportcentrum",
+        "details": {}
+    },
+    {
+        "provincie": "ZHDB",
+        "plaats": "Den Haag",
+        "naam": "Damclub Hofstad",
+        "secretariaat": "J. Kos",
+        "clublokaal": "Ontmoetingscentrum Morgenstond",
+        "details": {}
+    },
+    {
+        "provincie": "ZHDB",
+        "plaats": "Katwijk",
+        "naam": "KDC",
+        "secretariaat": "G.N. Berbee",
+        "clublokaal": "Wijkvereniging NNO",
+        "details": {}
+    },
+    {
+        "provincie": "ZHDB",
+        "plaats": "Leiden",
+        "naam": "Leids Damgenootschap",
+        "secretariaat": "J.D. Burgerhout",
+        "clublokaal": "Leids Denksportcentrum",
+        "details": {}
+    },
+    {
+        "provincie": "ZHDB",
+        "plaats": "Monster",
+        "naam": "Monsterse Damvereniging",
+        "secretariaat": "J. van der Meijden",
+        "clublokaal": "Het Vrondel",
+        "details": {}
+    },
+    {
+        "provincie": "ZHDB",
+        "plaats": "Naaldwijk",
+        "naam": "Naaldwijk",
+        "secretariaat": "N. Zwinkels",
+        "clublokaal": "Hooge Hasta",
+        "details": {}
+    },
+    {
+        "provincie": "ZHDB",
+        "plaats": "Rotterdam",
+        "naam": "PAR",
+        "secretariaat": "R.I. Verveer",
+        "clublokaal": "",
+        "details": {}
+    },
+    {
+        "provincie": "ZHDB",
+        "plaats": "Rijnsburg",
+        "naam": "RDC Rijnsburg",
+        "secretariaat": "M.M. Meijer-Kromhout",
+        "clublokaal": "Wilhelminaschool",
+        "details": {}
+    },
+    {
+        "provincie": "ZHDB",
+        "plaats": "Hazerswoude",
+        "naam": "Samen Sterk",
+        "secretariaat": "M.J. de Jong",
+        "clublokaal": "Café De Egelantier",
+        "details": {}
+    },
+    {
+        "provincie": "ZHDB",
+        "plaats": "Scheveningen",
+        "naam": "Scheveningen",
+        "secretariaat": "G. van der Meijden",
+        "clublokaal": "Het Kalhuis",
+        "details": {}
+    },
+    {
+        "provincie": "ZHDB",
+        "plaats": "Schiedam",
+        "naam": "Van Stigt Thans",
+        "secretariaat": "L.M. Mous",
+        "clublokaal": "De Basis",
+        "details": {}
+    }
+]

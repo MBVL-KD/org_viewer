@@ -1,0 +1,10 @@
+requests
+beautifulsoup4
+pymongo
+python-dotenv
+streamlit
+pandas
+openpyxl
+pydeck
+certifi
+dnspython
