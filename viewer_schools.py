@@ -416,25 +416,6 @@ def render_schools(db, map_height: int):
                 zoom = zoom_close
 
             layers = []
-            if not valid_clubs.empty:
-                layers.append(
-                    pdk.Layer(
-                        'ScatterplotLayer',
-                        data=valid_clubs,
-                        id='school_map_clubs',
-                        pickable=False,
-                        opacity=0.78,
-                        stroked=True,
-                        filled=True,
-                        radius_min_pixels=6,
-                        radius_max_pixels=24,
-                        get_position='[longitude, latitude]',
-                        get_fill_color='[235, 115, 35, 200]',
-                        get_line_color='[90, 40, 10]',
-                        get_radius=1700,
-                        auto_highlight=True,
-                    )
-                )
             if not valid_schools.empty:
                 layers.append(
                     pdk.Layer(
@@ -451,6 +432,25 @@ def render_schools(db, map_height: int):
                         get_fill_color='[160, 180, 240, 170]',
                         get_line_color='[255, 255, 255]',
                         get_radius=2000,
+                        auto_highlight=True,
+                    )
+                )
+            if not valid_clubs.empty:
+                layers.append(
+                    pdk.Layer(
+                        'ScatterplotLayer',
+                        data=valid_clubs,
+                        id='school_map_clubs',
+                        pickable=False,
+                        opacity=0.78,
+                        stroked=True,
+                        filled=True,
+                        radius_min_pixels=6,
+                        radius_max_pixels=24,
+                        get_position='[longitude, latitude]',
+                        get_fill_color='[235, 115, 35, 200]',
+                        get_line_color='[90, 40, 10]',
+                        get_radius=1700,
                         auto_highlight=True,
                     )
                 )
