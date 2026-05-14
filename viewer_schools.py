@@ -1,7 +1,7 @@
 """Scholen-tab (Streamlit): zelfde UX-patroon als damclubs."""
 import json
 import time
-from typing import Optional
+from typing import Any, List, Optional
 
 import pandas as pd
 import pydeck as pdk
@@ -102,6 +102,59 @@ def _apply_pydeck_school_pick(selection, filtered_reset_df):
         match = filtered_reset_df[filtered_reset_df['administratienummer'].astype(str) == str(admin)]
         if len(match) == 1:
             st.session_state.selected_school_id = match.iloc[0]['_id']
+
+
+def _clubs_overlay_for_school_filters(
+    db: Any,
+    prov_sel: List[str],
+    gem_sel: List[str],
+    pc_lo: Optional[int],
+    pc_hi: Optional[int],
+    search: str,
+    filtered_schools: pd.DataFrame,
+) -> pd.DataFrame:
+    """Damclubs met lat/lon die bij de schoolfilters horen (provincie; plaats bij ruimtelijke/zoekfilter)."""
+    narrow_plaats = bool(gem_sel) or (pc_lo is not None) or (pc_hi is not None) or bool((search or '').strip())
+    allowed_plaatsen: Optional[set] = None
+    if narrow_plaats:
+        if filtered_schools.empty:
+            return pd.DataFrame()
+        allowed_plaatsen = {
+            str(p).strip()
+            for p in filtered_schools['plaats'].dropna().unique()
+            if str(p).strip()
+        }
+        if not allowed_plaatsen:
+            return pd.DataFrame()
+
+    out_rows = []
+    for c in db['clubs'].find():
+        lat, lon = c.get('lat'), c.get('lon')
+        if lat is None or lon is None:
+            continue
+        try:
+            latf = float(lat)
+            lonf = float(lon)
+        except (TypeError, ValueError):
+            continue
+        prov = str(c.get('provincie') or '').strip()
+        plaats = str(c.get('plaats') or '').strip()
+        if prov_sel and prov not in prov_sel:
+            continue
+        if allowed_plaatsen is not None and plaats not in allowed_plaatsen:
+            continue
+        det = c.get('details') if isinstance(c.get('details'), dict) else {}
+        website = str(det.get('website') or '').strip()
+        out_rows.append({
+            'naam': c.get('naam') or '',
+            'plaats': plaats,
+            'provincie': prov,
+            'website': website,
+            'latitude': latf,
+            'longitude': lonf,
+            'club_id': str(c['_id']),
+        })
+    return pd.DataFrame(out_rows)
 
 
 def render_schools(db, map_height: int):
@@ -261,102 +314,194 @@ def render_schools(db, map_height: int):
 
     with col_map:
         st.subheader('Kaart')
-        map_df = filtered_reset[['naam', 'plaats', 'website', 'lat', 'lon', '_id', 'administratienummer']].dropna(
-            subset=['lat', 'lon']
+        show_clubs_on_map = st.checkbox(
+            'Damclubs op deze kaart tonen',
+            value=False,
+            key='school_map_show_clubs',
+            help=(
+                'Zelfde provincie als je schoolfilter. Bij filter op gemeente, postcodebereik of zoekterm: '
+                'club moet in dezelfde plaats zitten als een school in de huidige selectie. '
+                'Soort/status van scholen gelden niet voor clubs. Oranje punten zijn niet klikbaar; '
+                'selectie blijft voor scholen (blauw).'
+            ),
         )
-        if map_df.empty:
-            st.info('Geen coördinaten in deze selectie. Draai `python3 import_schools.py … --geocode` of vul handmatig in.')
-        else:
+
+        nl_lat_lo, nl_lat_hi = 50.5, 53.7
+        nl_lon_lo, nl_lon_hi = 3.0, 7.5
+
+        map_df = filtered_reset[
+            ['naam', 'plaats', 'website', 'lat', 'lon', '_id', 'administratienummer']
+        ].dropna(subset=['lat', 'lon'])
+        valid_schools = pd.DataFrame()
+        invalid_schools = 0
+        if not map_df.empty:
             map_df = map_df.rename(columns={'lat': 'latitude', 'lon': 'longitude'})
             map_df['school_id'] = map_df['_id'].astype(str)
-            valid = map_df[
-                (map_df['latitude'] >= 50.5) & (map_df['latitude'] <= 53.7) &
-                (map_df['longitude'] >= 3.0) & (map_df['longitude'] <= 7.5)
+            map_df['map_tip_line'] = map_df['administratienummer'].astype(str)
+            vs = map_df[
+                (map_df['latitude'] >= nl_lat_lo) & (map_df['latitude'] <= nl_lat_hi) &
+                (map_df['longitude'] >= nl_lon_lo) & (map_df['longitude'] <= nl_lon_hi)
             ].copy()
-            invalid_count = len(map_df) - len(valid)
-            if valid.empty:
-                st.warning('Geen punten binnen het NL-kaartvenster.')
-            else:
-                zoom_close = 12.8
-                center_lat = float(valid['latitude'].median())
-                center_lon = float(valid['longitude'].median())
-                zoom = 7.0
-                lat_span = float(valid['latitude'].max() - valid['latitude'].min())
-                lon_span = float(valid['longitude'].max() - valid['longitude'].min())
-                if lat_span < 0.4 and lon_span < 0.4:
-                    zoom = 9.0
-                elif lat_span < 0.8 and lon_span < 0.8:
-                    zoom = 8.5
-                elif lat_span < 1.5 and lon_span < 1.5:
-                    zoom = 8.0
-                elif lat_span < 2.5 and lon_span < 2.5:
-                    zoom = 7.5
+            invalid_schools = len(map_df) - len(vs)
+            valid_schools = vs
 
-                sel_m = valid[valid['_id'] == sid_map] if sid_map is not None else pd.DataFrame()
-                if not sel_m.empty:
-                    center_lat = float(sel_m.iloc[0]['latitude'])
-                    center_lon = float(sel_m.iloc[0]['longitude'])
-                    zoom = zoom_close
+        clubs_raw = pd.DataFrame()
+        if show_clubs_on_map:
+            clubs_raw = _clubs_overlay_for_school_filters(
+                db, prov_sel, gem_sel, pc_lo, pc_hi, search, filtered_reset,
+            )
+        valid_clubs = pd.DataFrame()
+        invalid_clubs = 0
+        if show_clubs_on_map and not clubs_raw.empty:
+            vcl = clubs_raw[
+                (clubs_raw['latitude'] >= nl_lat_lo) & (clubs_raw['latitude'] <= nl_lat_hi) &
+                (clubs_raw['longitude'] >= nl_lon_lo) & (clubs_raw['longitude'] <= nl_lon_hi)
+            ].copy()
+            invalid_clubs = len(clubs_raw) - len(vcl)
+            vcl = vcl.copy()
+            vcl['map_tip_line'] = 'Damclub'
+            valid_clubs = vcl
 
-                layer_all = pdk.Layer(
-                    'ScatterplotLayer',
-                    data=valid,
-                    id='school_layer',
-                    pickable=True,
-                    opacity=0.85,
-                    stroked=True,
-                    filled=True,
-                    radius_min_pixels=8,
-                    radius_max_pixels=36,
-                    get_position='[longitude, latitude]',
-                    get_fill_color='[160, 180, 240, 170]',
-                    get_line_color='[255, 255, 255]',
-                    get_radius=2000,
-                    auto_highlight=True,
-                )
-                layers = [layer_all]
-                if not sel_m.empty:
-                    hl = sel_m[['naam', 'plaats', 'website', 'latitude', 'longitude', 'school_id', 'administratienummer']].copy()
-                    layers.append(
-                        pdk.Layer(
-                            'ScatterplotLayer',
-                            data=hl,
-                            id='school_selected',
-                            pickable=True,
-                            opacity=1.0,
-                            stroked=True,
-                            filled=True,
-                            radius_min_pixels=14,
-                            radius_max_pixels=48,
-                            get_position='[longitude, latitude]',
-                            get_fill_color='[30, 80, 220, 230]',
-                            get_line_color='[255, 255, 255]',
-                            get_radius=4200,
-                            auto_highlight=True,
-                        )
+        if valid_schools.empty and valid_clubs.empty:
+            parts = [
+                'Geen punten met coördinaten binnen het NL-kaartvenster voor deze instellingen.',
+            ]
+            if len(filtered_reset) and map_df.empty:
+                parts.append('Scholen in de selectie hebben geen lat/lon — draai geocode of vul coördinaten handmatig in.')
+            if show_clubs_on_map and clubs_raw.empty and filtered_reset.empty:
+                parts.append('Lege schoolselectie: geen plaatsen om damclubs aan te koppelen.')
+            if show_clubs_on_map and clubs_raw.empty and len(filtered_reset) > 0:
+                parts.append('Geen damclubs voldoen aan de criteria, of clubs missen coördinaten.')
+            st.info(' '.join(parts))
+        else:
+            lats: List[float] = []
+            lons: List[float] = []
+            if not valid_schools.empty:
+                lats.extend(valid_schools['latitude'].astype(float).tolist())
+                lons.extend(valid_schools['longitude'].astype(float).tolist())
+            if not valid_clubs.empty:
+                lats.extend(valid_clubs['latitude'].astype(float).tolist())
+                lons.extend(valid_clubs['longitude'].astype(float).tolist())
+
+            zoom_close = 12.8
+            center_lat = float(pd.Series(lats).median())
+            center_lon = float(pd.Series(lons).median())
+            zoom = 7.0
+            lat_span = float(max(lats) - min(lats))
+            lon_span = float(max(lons) - min(lons))
+            if lat_span < 0.4 and lon_span < 0.4:
+                zoom = 9.0
+            elif lat_span < 0.8 and lon_span < 0.8:
+                zoom = 8.5
+            elif lat_span < 1.5 and lon_span < 1.5:
+                zoom = 8.0
+            elif lat_span < 2.5 and lon_span < 2.5:
+                zoom = 7.5
+
+            sel_m = (
+                valid_schools[valid_schools['_id'] == sid_map]
+                if sid_map is not None and not valid_schools.empty
+                else pd.DataFrame()
+            )
+            if not sel_m.empty:
+                center_lat = float(sel_m.iloc[0]['latitude'])
+                center_lon = float(sel_m.iloc[0]['longitude'])
+                zoom = zoom_close
+
+            layers = []
+            if not valid_clubs.empty:
+                layers.append(
+                    pdk.Layer(
+                        'ScatterplotLayer',
+                        data=valid_clubs,
+                        id='school_map_clubs',
+                        pickable=False,
+                        opacity=0.78,
+                        stroked=True,
+                        filled=True,
+                        radius_min_pixels=6,
+                        radius_max_pixels=24,
+                        get_position='[longitude, latitude]',
+                        get_fill_color='[235, 115, 35, 200]',
+                        get_line_color='[90, 40, 10]',
+                        get_radius=1700,
+                        auto_highlight=True,
                     )
-                tooltip = {
-                    'html': '<b>{naam}</b><br/>{administratienummer}<br/>{plaats}<br/><a href="{website}" target="_blank">Website</a>',
-                    'style': {'backgroundColor': 'black', 'color': 'white'},
-                }
-                deck = pdk.Deck(
-                    map_style='light',
-                    initial_view_state=pdk.ViewState(latitude=center_lat, longitude=center_lon, zoom=zoom, pitch=0),
-                    layers=layers,
-                    tooltip=tooltip,
-                    height=map_height,
                 )
-                sel = st.pydeck_chart(
-                    deck,
-                    use_container_width=True,
-                    selection_mode='single-object',
-                    on_select='rerun',
-                    key='school_map',
+            if not valid_schools.empty:
+                layers.append(
+                    pdk.Layer(
+                        'ScatterplotLayer',
+                        data=valid_schools,
+                        id='school_layer',
+                        pickable=True,
+                        opacity=0.85,
+                        stroked=True,
+                        filled=True,
+                        radius_min_pixels=8,
+                        radius_max_pixels=36,
+                        get_position='[longitude, latitude]',
+                        get_fill_color='[160, 180, 240, 170]',
+                        get_line_color='[255, 255, 255]',
+                        get_radius=2000,
+                        auto_highlight=True,
+                    )
                 )
-                _apply_pydeck_school_pick(sel, filtered_reset)
-                st.caption('Klik op een punt om de school te selecteren.')
-                if invalid_count:
-                    st.warning(f'{invalid_count} punt(en) buiten het NL-venster verborgen.')
+            if not sel_m.empty:
+                hl = sel_m[
+                    ['naam', 'plaats', 'website', 'latitude', 'longitude', 'school_id', 'administratienummer', 'map_tip_line']
+                ].copy()
+                layers.append(
+                    pdk.Layer(
+                        'ScatterplotLayer',
+                        data=hl,
+                        id='school_selected',
+                        pickable=True,
+                        opacity=1.0,
+                        stroked=True,
+                        filled=True,
+                        radius_min_pixels=14,
+                        radius_max_pixels=48,
+                        get_position='[longitude, latitude]',
+                        get_fill_color='[30, 80, 220, 230]',
+                        get_line_color='[255, 255, 255]',
+                        get_radius=4200,
+                        auto_highlight=True,
+                    )
+                )
+            tooltip = {
+                'html': (
+                    '<b>{naam}</b><br/>{map_tip_line}<br/>{plaats}<br/>'
+                    '<a href="{website}" target="_blank">Website</a>'
+                ),
+                'style': {'backgroundColor': 'black', 'color': 'white'},
+            }
+            deck = pdk.Deck(
+                map_style='light',
+                initial_view_state=pdk.ViewState(latitude=center_lat, longitude=center_lon, zoom=zoom, pitch=0),
+                layers=layers,
+                tooltip=tooltip,
+                height=map_height,
+            )
+            sel = st.pydeck_chart(
+                deck,
+                use_container_width=True,
+                selection_mode='single-object',
+                on_select='rerun',
+                key='school_map',
+            )
+            _apply_pydeck_school_pick(sel, filtered_reset)
+            cap = 'Klik op een blauw punt om de school te selecteren.'
+            if not valid_clubs.empty:
+                cap += f' Oranje = damclub ({len(valid_clubs)} in beeld).'
+            st.caption(cap)
+            warn_parts = []
+            if invalid_schools:
+                warn_parts.append(f'{invalid_schools} schoolpunt(en) buiten het NL-venster verborgen.')
+            if invalid_clubs:
+                warn_parts.append(f'{invalid_clubs} clubpunt(en) buiten het NL-venster verborgen.')
+            if warn_parts:
+                st.warning(' '.join(warn_parts))
 
     sid = st.session_state.selected_school_id
     selected = next((r['raw'] for r in rows if r['_id'] == sid), None) if sid else None
