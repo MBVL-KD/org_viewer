@@ -42,6 +42,39 @@ for _block in (
     _NL_PROVINCIE_ALIASES.update(_block)
 
 
+# KNDB-/bondcodes zoals in scraper `clubs.provincie` (niet gelijk aan CSV/OSM-namen).
+_CLUB_BOND_CODE_TO_CANONICAL_PROVINCIE = {
+    'DDB': 'Drenthe',
+    'DZHZ': 'Zuid-Holland',
+    'GDB': 'Gelderland',
+    'PFDB': 'Friesland',
+    'PGD': 'Groningen',
+    'PLDB': 'Limburg',
+    'PNDB': 'Noord-Brabant',
+    'PNHD': 'Noord-Holland',
+    'PODB': 'Overijssel',
+    'PZDB': 'Zeeland',
+    'UPDB': 'Utrecht',
+    'ZHDB': 'Zuid-Holland',
+}
+
+
+def canonical_nl_provincie_club(raw) -> str:
+    """
+    Provincieveld van een damclub: bondcode (PNHD, ZHDB, …) of vrije tekst → zelfde
+    canonieke naam als `normalize_nl_provincienaam` voor scholen/CSV.
+    """
+    if raw is None:
+        return ''
+    s = str(raw).strip()
+    if not s:
+        return ''
+    mapped = _CLUB_BOND_CODE_TO_CANONICAL_PROVINCIE.get(s)
+    if mapped:
+        return mapped
+    return normalize_nl_provincienaam(s)
+
+
 def normalize_nl_provincienaam(raw) -> str:
     """
     Canonieke Nederlandse provincienaam: koppeltekens zoals in de officiële

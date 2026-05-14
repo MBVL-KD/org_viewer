@@ -8,6 +8,8 @@ import pydeck as pdk
 import streamlit as st
 from bson import ObjectId
 
+from nl_provincie import canonical_nl_provincie_club, normalize_nl_provincienaam
+
 LIST_VISIBLE_ROWS = 10
 TABLE_ROW_PX = 36
 TABLE_HEADER_PX = 52
@@ -127,6 +129,10 @@ def _clubs_overlay_for_school_filters(
         if not allowed_plaatsen:
             return pd.DataFrame()
 
+    prov_wanted: Optional[set] = None
+    if prov_sel:
+        prov_wanted = {normalize_nl_provincienaam(str(p)) for p in prov_sel if str(p).strip()}
+
     out_rows = []
     for c in db['clubs'].find():
         lat, lon = c.get('lat'), c.get('lon')
@@ -139,7 +145,8 @@ def _clubs_overlay_for_school_filters(
             continue
         prov = str(c.get('provincie') or '').strip()
         plaats = str(c.get('plaats') or '').strip()
-        if prov_sel and prov not in prov_sel:
+        club_prov = canonical_nl_provincie_club(c.get('provincie'))
+        if prov_wanted is not None and club_prov not in prov_wanted:
             continue
         if allowed_plaatsen is not None and plaats not in allowed_plaatsen:
             continue
