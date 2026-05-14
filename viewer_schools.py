@@ -85,10 +85,48 @@ def _pydeck_first_picked_object(selection):
     return None
 
 
-def _apply_pydeck_school_pick(selection, filtered_reset_df):
+def _club_doc_to_map_popup(doc: dict) -> dict:
+    """Compacte dict voor popup na klik op damclub op de scholenkaart."""
+    det = doc.get('details') if isinstance(doc.get('details'), dict) else {}
+    eml = det.get('emails') or []
+    first_email = ''
+    for e in eml:
+        if e and str(e).strip():
+            first_email = str(e).strip()
+            break
+    bond = str(doc.get('provincie') or '').strip()
+    prov_label = canonical_nl_provincie_club(doc.get('provincie'))
+    return {
+        'naam': doc.get('naam') or '',
+        'plaats': doc.get('plaats') or '',
+        'secretariaat': str(doc.get('secretariaat') or '').strip(),
+        'bond': bond,
+        'provincie_label': prov_label,
+        'website': str(det.get('website') or '').strip(),
+        'bond_url': str(doc.get('bond_url') or '').strip(),
+        'club_url': str(doc.get('club_url') or '').strip(),
+        'email': first_email,
+    }
+
+
+def _apply_school_map_pick(selection, filtered_reset_df, clubs_coll):
+    """Verwerk klik op scholenkaart: damclub → popup, school → bestaande selectie."""
     picked = _pydeck_first_picked_object(selection)
     if not picked or not isinstance(picked, dict):
         return
+    cid = picked.get('club_id')
+    if cid:
+        try:
+            oid = ObjectId(str(cid))
+        except Exception:
+            return
+        doc = clubs_coll.find_one({'_id': oid})
+        if doc:
+            st.session_state['school_map_club_popup'] = _club_doc_to_map_popup(doc)
+        else:
+            st.session_state.pop('school_map_club_popup', None)
+        return
+    st.session_state.pop('school_map_club_popup', None)
     sid = picked.get('school_id')
     if sid:
         try:
@@ -104,6 +142,30 @@ def _apply_pydeck_school_pick(selection, filtered_reset_df):
         match = filtered_reset_df[filtered_reset_df['administratienummer'].astype(str) == str(admin)]
         if len(match) == 1:
             st.session_state.selected_school_id = match.iloc[0]['_id']
+
+
+@st.dialog('Damclub')
+def _school_map_club_popup_dialog():
+    pop = st.session_state.get('school_map_club_popup')
+    if not pop:
+        return
+    st.markdown(f"### {pop.get('naam') or '—'}")
+    st.caption(f"{pop.get('plaats') or '—'} · {pop.get('provincie_label') or '—'}")
+    if pop.get('bond') and pop.get('bond') != pop.get('provincie_label'):
+        st.caption(f"Bondcode in data: **{pop['bond']}**")
+    if pop.get('secretariaat'):
+        st.write('**Secretariaat:**', pop['secretariaat'])
+    if pop.get('website'):
+        st.write('**Website:**', pop['website'])
+    if pop.get('email'):
+        st.write('**E-mail:**', pop['email'])
+    if pop.get('bond_url'):
+        st.write('**Bond:**', pop['bond_url'])
+    if pop.get('club_url'):
+        st.write('**KNDB:**', pop['club_url'])
+    if st.button('Sluiten', use_container_width=True, key='school_map_club_popup_close'):
+        st.session_state.pop('school_map_club_popup', None)
+        st.rerun()
 
 
 def _clubs_overlay_for_school_filters(
@@ -328,10 +390,12 @@ def render_schools(db, map_height: int):
             help=(
                 'Zelfde provincie als je schoolfilter. Bij filter op gemeente, postcodebereik of zoekterm: '
                 'club moet in dezelfde plaats zitten als een school in de huidige selectie. '
-                'Soort/status van scholen gelden niet voor clubs. Oranje punten zijn niet klikbaar; '
-                'selectie blijft voor scholen (blauw).'
+                'Soort/status van scholen gelden niet voor clubs. Klik op een oranje punt voor een kort '
+                'gegevensvenster; lichtblauw = school (donkerblauw = geselecteerde school).'
             ),
         )
+        if not show_clubs_on_map:
+            st.session_state.pop('school_map_club_popup', None)
 
         nl_lat_lo, nl_lat_hi = 50.5, 53.7
         nl_lon_lo, nl_lon_hi = 3.0, 7.5
@@ -441,7 +505,7 @@ def render_schools(db, map_height: int):
                         'ScatterplotLayer',
                         data=valid_clubs,
                         id='school_map_clubs',
-                        pickable=False,
+                        pickable=True,
                         opacity=0.78,
                         stroked=True,
                         filled=True,
@@ -497,10 +561,10 @@ def render_schools(db, map_height: int):
                 on_select='rerun',
                 key='school_map',
             )
-            _apply_pydeck_school_pick(sel, filtered_reset)
-            cap = 'Klik op een blauw punt om de school te selecteren.'
+            _apply_school_map_pick(sel, filtered_reset, db['clubs'])
+            cap = 'Klik op een **lichtblauw** schoolpunt om de school te selecteren.'
             if not valid_clubs.empty:
-                cap += f' Oranje = damclub ({len(valid_clubs)} in beeld).'
+                cap += f' **Oranje** = damclub ({len(valid_clubs)} in beeld); klik voor korte gegevens in een venster.'
             st.caption(cap)
             warn_parts = []
             if invalid_schools:
@@ -564,3 +628,6 @@ def render_schools(db, map_height: int):
                             st.rerun()
                         except Exception as exc:
                             st.error(f'Opslaan mislukt: {exc}')
+
+    if st.session_state.get('school_map_club_popup'):
+        _school_map_club_popup_dialog()

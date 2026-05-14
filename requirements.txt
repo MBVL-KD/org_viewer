@@ -2,7 +2,7 @@ requests
 beautifulsoup4
 pymongo
 python-dotenv
-streamlit
+streamlit>=1.33
 pandas
 openpyxl
 pydeck
