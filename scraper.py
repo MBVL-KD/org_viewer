@@ -10,7 +10,7 @@ import certifi
 from bs4 import BeautifulSoup
 from pymongo import MongoClient
 
-from nl_provincie import normalize_nl_provincienaam
+from nl_provincie import canonical_nl_provincie_club, normalize_nl_provincienaam
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
@@ -729,9 +729,43 @@ def _plaats_matches_reverse_haystack(plaats, haystack):
         return True
     if p in haystack:
         return True
+    # IJmuiden hoort bij gemeente Velsen; OSM noemt vaak 'Velsen' in het adres.
+    if p == 'ijmuiden' and 'velsen' in haystack:
+        return True
     if p in {'den haag', "'s-gravenhage", 's-gravenhage'}:
         return ("'s-gravenhage" in haystack or 's-gravenhage' in haystack or 'den haag' in haystack)
     return False
+
+
+# Extra zoekterm voor Nominatim (plaatsnaam lowercase) — onder andere wijk/gemeente.
+_PLAATS_GEOCODE_EXTRA = {
+    'ijmuiden': 'Velsen',
+    'velsen-noord': 'Velsen',
+    'velsen-zuid': 'Velsen',
+}
+
+
+def _append_provincie_en_plaats_hints(parts, club):
+    """Bond → provincie + bekende gemeente-disambiguatie (beter dan alleen clublokaal + plaats)."""
+    joined = ', '.join(parts).lower()
+    plaats = (club.get('plaats') or '').strip().lower()
+    extra = _PLAATS_GEOCODE_EXTRA.get(plaats)
+    if extra and extra.lower() not in joined:
+        parts.append(extra)
+    canon = canonical_nl_provincie_club(club.get('provincie'))
+    if canon and canon.lower().replace('-', ' ') not in joined.replace('-', ' '):
+        parts.append(canon)
+
+
+def _club_plaats_centroid_fallback_address(club):
+    """Laatste redmiddel: centrum van de KNDB-plaats binnen de juiste provincie (Nominatim)."""
+    plaats = (club.get('plaats') or '').strip()
+    if not plaats:
+        return ''
+    parts = [plaats]
+    _append_provincie_en_plaats_hints(parts, club)
+    parts.append('Nederland')
+    return ', '.join(parts)
 
 
 def club_coordinates_outside_netherlands(club):
@@ -806,9 +840,10 @@ def _geocode_address_from_location(loc, club):
         hay = ', '.join(parts).lower()
         if extra.lower() not in hay:
             parts.append(extra)
-    _maybe_append_oosterend_island(parts, club)
     if not parts:
         return ''
+    _append_provincie_en_plaats_hints(parts, club)
+    _maybe_append_oosterend_island(parts, club)
     parts.append('Nederland')
     return ', '.join(parts)
 
@@ -821,6 +856,7 @@ def _geocode_address_clublokaal_fallback(club):
     parts = [clublokaal]
     if plaats:
         parts.append(plaats)
+    _append_provincie_en_plaats_hints(parts, club)
     _maybe_append_oosterend_island(parts, club)
     parts.append('Nederland')
     return ', '.join(parts)
@@ -845,6 +881,9 @@ def geocode_club(club, skip_geo_cache=False):
         address = get_secretary_address(club)
 
     if not address.strip():
+        address = _club_plaats_centroid_fallback_address(club) or ''
+
+    if not address.strip():
         return club
 
     geometry = geocode_query(address, skip_cache=skip_geo_cache)
@@ -858,6 +897,15 @@ def geocode_club(club, skip_geo_cache=False):
             if geometry:
                 club['lat'] = geometry['lat']
                 club['lon'] = geometry['lon']
+
+    if club.get('lat') is None or club.get('lon') is None:
+        fb = _club_plaats_centroid_fallback_address(club)
+        if fb and fb != address:
+            geometry = geocode_query(fb, skip_cache=skip_geo_cache)
+            if geometry:
+                club['lat'] = geometry['lat']
+                club['lon'] = geometry['lon']
+
     return club
 
 
