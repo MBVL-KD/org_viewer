@@ -862,6 +862,26 @@ def _geocode_address_clublokaal_fallback(club):
     return ', '.join(parts)
 
 
+def _club_plaats_needs_geocode_reverse_check(club) -> bool:
+    """Plaatsen waar Nominatim snel een verkeerde treffer geeft (controle via reverse)."""
+    p = (club.get('plaats') or '').strip().lower()
+    return p in _PLAATS_GEOCODE_EXTRA
+
+
+def _discard_geocode_if_plaats_mismatch(club) -> None:
+    """Wis lat/lon als reverse-OSM de KNDB-plaats niet ondersteunt (bv. Leiden i.p.v. IJmuiden)."""
+    if club.get('lat') is None or club.get('lon') is None:
+        return
+    if not _club_plaats_needs_geocode_reverse_check(club):
+        return
+    data = _reverse_geocode_payload(club['lat'], club['lon'])
+    if not data:
+        return
+    if club_geocode_plaats_mismatch(club, data):
+        club.pop('lat', None)
+        club.pop('lon', None)
+
+
 def geocode_club(club, skip_geo_cache=False):
     if club.get('lat') and club.get('lon') and is_valid_nl_coords(club['lat'], club['lon']):
         return club
@@ -890,6 +910,7 @@ def geocode_club(club, skip_geo_cache=False):
     if geometry:
         club['lat'] = geometry['lat']
         club['lon'] = geometry['lon']
+        _discard_geocode_if_plaats_mismatch(club)
     else:
         secretary_address = get_secretary_address(club)
         if secretary_address and secretary_address != address:
@@ -897,6 +918,7 @@ def geocode_club(club, skip_geo_cache=False):
             if geometry:
                 club['lat'] = geometry['lat']
                 club['lon'] = geometry['lon']
+                _discard_geocode_if_plaats_mismatch(club)
 
     if club.get('lat') is None or club.get('lon') is None:
         fb = _club_plaats_centroid_fallback_address(club)
@@ -905,6 +927,7 @@ def geocode_club(club, skip_geo_cache=False):
             if geometry:
                 club['lat'] = geometry['lat']
                 club['lon'] = geometry['lon']
+                _discard_geocode_if_plaats_mismatch(club)
 
     return club
 
