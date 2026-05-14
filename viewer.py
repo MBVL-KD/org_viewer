@@ -209,14 +209,21 @@ def render_clubs(map_height):
     df = pd.DataFrame(rows)
     show_sidebar = st.sidebar
     show_sidebar.header('Filters')
-    province_filter = show_sidebar.selectbox('Filter op provincie', ['Alle'] + sorted(df['provincie'].dropna().unique().tolist()))
+    province_opts = sorted(df['provincie'].dropna().unique().tolist())
+    province_filter = show_sidebar.multiselect(
+        'Provincie',
+        options=province_opts,
+        default=[],
+        key='club_filter_prov',
+        help='Geen selectie = alle provincies. Meerdere provincies: OR.',
+    )
     website_only = show_sidebar.checkbox('Alleen clubs met website', value=False)
 
     search_term = st.text_input('Zoek club, plaats, provincie, website of contact')
 
     filtered = df.copy()
-    if province_filter != 'Alle':
-        filtered = filtered[filtered['provincie'] == province_filter]
+    if province_filter:
+        filtered = filtered[filtered['provincie'].isin(province_filter)]
     if search_term:
         search_mask = (
             filtered['naam'].str.contains(search_term, case=False, na=False) |

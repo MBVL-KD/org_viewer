@@ -159,14 +159,18 @@ def render_schools(db, map_height: int):
     df['postcode4'] = df['postcode_vestiging'].apply(_postcode_first_four_digits)
     sb = st.sidebar
     sb.header('Filters (scholen)')
-    prov = sb.selectbox('Provincie', ['Alle'] + sorted(df['provincie'].dropna().unique().tolist()))
+    _ms_help = 'Geen selectie = alles tonen. Meerdere waarden: elk van die waarden (OR binnen dit veld).'
+    prov_opts = sorted(df['provincie'].dropna().unique().tolist())
+    prov_sel = sb.multiselect('Provincie', options=prov_opts, default=[], key='school_filter_prov', help=_ms_help)
     gem_vals = sorted(
         {str(v).strip() for v in df['gemeente'].dropna().unique() if str(v).strip()},
         key=lambda x: x.lower(),
     )
-    gem = sb.selectbox('Gemeente', ['Alle'] + gem_vals)
-    soort_f = sb.selectbox('Soort', ['Alle'] + sorted(df['soort'].dropna().unique().tolist()))
-    status_f = sb.selectbox('Status', ['Alle'] + sorted(df['status'].dropna().unique().tolist()))
+    gem_sel = sb.multiselect('Gemeente', options=gem_vals, default=[], key='school_filter_gem', help=_ms_help)
+    soort_opts = sorted(df['soort'].dropna().unique().tolist())
+    soort_sel = sb.multiselect('Soort', options=soort_opts, default=[], key='school_filter_soort', help=_ms_help)
+    status_opts = sorted(df['status'].dropna().unique().tolist())
+    status_sel = sb.multiselect('Status', options=status_opts, default=[], key='school_filter_status', help=_ms_help)
     sb.markdown('Postcode (eerste 4 cijfers)')
     pc_col1, pc_col2 = sb.columns(2)
     with pc_col1:
@@ -178,14 +182,14 @@ def render_schools(db, map_height: int):
     search = st.text_input('Zoek school, plaats, admin.nr., e-mail …')
 
     filtered = df.copy()
-    if prov != 'Alle':
-        filtered = filtered[filtered['provincie'] == prov]
-    if gem != 'Alle':
-        filtered = filtered[filtered['gemeente'] == gem]
-    if soort_f != 'Alle':
-        filtered = filtered[filtered['soort'] == soort_f]
-    if status_f != 'Alle':
-        filtered = filtered[filtered['status'] == status_f]
+    if prov_sel:
+        filtered = filtered[filtered['provincie'].isin(prov_sel)]
+    if gem_sel:
+        filtered = filtered[filtered['gemeente'].isin(gem_sel)]
+    if soort_sel:
+        filtered = filtered[filtered['soort'].isin(soort_sel)]
+    if status_sel:
+        filtered = filtered[filtered['status'].isin(status_sel)]
     pc_lo = _parse_postcode_range_input(pc_min_in)
     pc_hi = _parse_postcode_range_input(pc_max_in)
     if pc_lo is not None and pc_hi is not None and pc_lo > pc_hi:
