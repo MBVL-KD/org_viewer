@@ -196,7 +196,11 @@ def _apply_school_map_pick(selection, filtered_reset_df, clubs_coll):
     if gn and str(gn).strip():
         # We mogen de key van een bestaand widget niet direct aanpassen ná
         # aanmaak; zet een pending waarde en forceer een rerun.
-        st.session_state['_pending_school_filter_gem'] = [str(gn).strip()]
+        gn = str(gn).strip()
+        current = list(st.session_state.get('school_filter_gem', []))
+        if gn not in current:
+            current.append(gn)
+        st.session_state['_pending_school_filter_gem'] = current
         st.session_state.pop('school_map_club_popup', None)
         st.rerun()
         return
@@ -493,7 +497,7 @@ def render_schools(db, map_height: int):
             key='school_map_show_gemeenten',
             help=(
                 'Groene labels = gemeenten met scholen in de huidige filters (provincie, soort, status, '
-                'postcode, zoekterm). Klik zet het gemeentefilter; scholen en damclubs volgen daarna. '
+                'postcode, zoekterm). Elke klik voegt een gemeente toe aan het filter (meerdere mogelijk). '
                 'Geen volledige gemeentegrenzen (te zwaar voor de browser); centra uit schoolcoördinaten.'
             ),
         )
