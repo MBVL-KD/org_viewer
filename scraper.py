@@ -625,10 +625,42 @@ def _nominatim_provincie_from_hit(hit):
     return ''
 
 
-def geocode_query(query, skip_cache=False):
+def _nominatim_hit_haystack(hit) -> str:
+    """Tekst om forward-geocode-resultaat te vergelijken met KNDB-plaats."""
+    parts = []
+    dn = hit.get('display_name')
+    if isinstance(dn, str) and dn.strip():
+        parts.append(dn.lower())
+    addr = hit.get('address') or {}
+    for key in (
+        'village', 'town', 'city', 'municipality', 'city_district',
+        'hamlet', 'suburb', 'locality', 'neighbourhood', 'county', 'state',
+    ):
+        v = addr.get(key)
+        if isinstance(v, str) and v.strip():
+            parts.append(v.lower())
+    return ' | '.join(parts)
+
+
+def _plaats_significant_tokens(plaats: str):
+    stop = {'van', 'de', 'het', 'op', 'ten', 'aan', 'den', "'s", 's'}
+    return [
+        w for w in re.split(r'[\s\-]+', (plaats or '').strip().lower())
+        if w and w not in stop and len(w) >= 2
+    ]
+
+
+def _nominatim_hit_matches_plaats(hit, plaats: str) -> bool:
+    if not plaats or not (plaats := plaats.strip()):
+        return True
+    return _plaats_matches_reverse_haystack(plaats, _nominatim_hit_haystack(hit))
+
+
+def geocode_query(query, skip_cache=False, plaats_expected=None):
     cache = load_geocode_cache()
-    if not skip_cache and query in cache:
-        cached = cache[query]
+    cache_key = query if not plaats_expected else f'{query}\0{plaats_expected.strip().lower()}'
+    if not skip_cache and cache_key in cache:
+        cached = cache[cache_key]
         if isinstance(cached, dict) and cached.get('provincie'):
             pn = normalize_nl_provincienaam(cached['provincie'])
             if pn != cached['provincie']:
@@ -641,7 +673,7 @@ def geocode_query(query, skip_cache=False):
             params={
                 'q': query,
                 'format': 'json',
-                'limit': 5,
+                'limit': 8,
                 'addressdetails': 1,
                 'countrycodes': 'nl',
             },
@@ -651,6 +683,8 @@ def geocode_query(query, skip_cache=False):
         response.raise_for_status()
         results = response.json()
         geometry = None
+        chosen = None
+        pe = (plaats_expected or '').strip() or None
         for hit in results:
             lat = float(hit['lat'])
             lon = float(hit['lon'])
@@ -658,15 +692,19 @@ def geocode_query(query, skip_cache=False):
                 continue
             if not _nominatim_hit_is_netherlands(hit):
                 continue
-            geometry = {'lat': lat, 'lon': lon}
-            prov = _nominatim_provincie_from_hit(hit)
+            if pe and not _nominatim_hit_matches_plaats(hit, pe):
+                continue
+            chosen = hit
+            break
+        if chosen is not None:
+            geometry = {'lat': float(chosen['lat']), 'lon': float(chosen['lon'])}
+            prov = _nominatim_provincie_from_hit(chosen)
             if prov:
                 geometry['provincie'] = prov
-            break
     except Exception:
         geometry = None
 
-    cache[query] = geometry
+    cache[cache_key] = geometry
     save_geocode_cache(cache)
     time.sleep(1)
     return geometry
@@ -721,15 +759,17 @@ def _reverse_payload_haystack_for_plaats(data):
 
 
 def _plaats_matches_reverse_haystack(plaats, haystack):
-    """Ruwe check: foutieve geocode (Oosterend vs Easterein) valt door de mand."""
+    """Ruwe check: foutieve geocode (Oosterend vs Easterein, Bergen vs Bergen op Zoom) valt door."""
     if not plaats or not haystack:
         return True
     p = plaats.strip().lower()
-    if len(p) < 5:
-        return True
     if p in haystack:
         return True
-    # IJmuiden hoort bij gemeente Velsen; OSM noemt vaak 'Velsen' in het adres.
+    tokens = _plaats_significant_tokens(p)
+    if len(tokens) >= 2:
+        return all(t in haystack for t in tokens)
+    if len(p) >= 5 and p in haystack:
+        return True
     if p == 'ijmuiden' and 'velsen' in haystack:
         return True
     if p in {'den haag', "'s-gravenhage", 's-gravenhage'}:
@@ -744,17 +784,30 @@ _PLAATS_GEOCODE_EXTRA = {
     'velsen-zuid': 'Velsen',
 }
 
+# Vestigingsplaats → echte provincie (KNDB-bondcode is géén provincie voor geocode).
+_PLAATS_GEOCODE_PROVINCE_OVERRIDE = {
+    'bergen op zoom': 'Noord-Brabant',
+    'ossendrecht': 'Noord-Brabant',
+    'halsteren': 'Noord-Brabant',
+    'woensdrecht': 'Noord-Brabant',
+    'hulst': 'Zeeland',
+    'terneuzen': 'Zeeland',
+    'goes': 'Zeeland',
+    'middelburg': 'Zeeland',
+    'vlissingen': 'Zeeland',
+}
+
 
 def _append_provincie_en_plaats_hints(parts, club):
-    """Bond → provincie + bekende gemeente-disambiguatie (beter dan alleen clublokaal + plaats)."""
+    """Gemeente-disambiguatie + echte provincie; géén bondcode als provincie."""
     joined = ', '.join(parts).lower()
     plaats = (club.get('plaats') or '').strip().lower()
     extra = _PLAATS_GEOCODE_EXTRA.get(plaats)
     if extra and extra.lower() not in joined:
         parts.append(extra)
-    canon = canonical_nl_provincie_club(club.get('provincie'))
-    if canon and canon.lower().replace('-', ' ') not in joined.replace('-', ' '):
-        parts.append(canon)
+    prov = _PLAATS_GEOCODE_PROVINCE_OVERRIDE.get(plaats)
+    if prov and prov.lower().replace('-', ' ') not in joined.replace('-', ' '):
+        parts.append(prov)
 
 
 def _club_plaats_centroid_fallback_address(club):
@@ -862,17 +915,10 @@ def _geocode_address_clublokaal_fallback(club):
     return ', '.join(parts)
 
 
-def _club_plaats_needs_geocode_reverse_check(club) -> bool:
-    """Plaatsen waar Nominatim snel een verkeerde treffer geeft (controle via reverse)."""
-    p = (club.get('plaats') or '').strip().lower()
-    return p in _PLAATS_GEOCODE_EXTRA
-
-
 def _discard_geocode_if_plaats_mismatch(club) -> None:
     """Wis lat/lon als reverse-OSM de KNDB-plaats niet ondersteunt (bv. Leiden i.p.v. IJmuiden)."""
-    if club.get('lat') is None or club.get('lon') is None:
-        return
-    if not _club_plaats_needs_geocode_reverse_check(club):
+    plaats = (club.get('plaats') or '').strip()
+    if not plaats or club.get('lat') is None or club.get('lon') is None:
         return
     data = _reverse_geocode_payload(club['lat'], club['lon'])
     if not data:
@@ -906,7 +952,9 @@ def geocode_club(club, skip_geo_cache=False):
     if not address.strip():
         return club
 
-    geometry = geocode_query(address, skip_cache=skip_geo_cache)
+    plaats_hint = (club.get('plaats') or '').strip() or None
+
+    geometry = geocode_query(address, skip_cache=skip_geo_cache, plaats_expected=plaats_hint)
     if geometry:
         club['lat'] = geometry['lat']
         club['lon'] = geometry['lon']
@@ -914,7 +962,9 @@ def geocode_club(club, skip_geo_cache=False):
     else:
         secretary_address = get_secretary_address(club)
         if secretary_address and secretary_address != address:
-            geometry = geocode_query(secretary_address, skip_cache=skip_geo_cache)
+            geometry = geocode_query(
+                secretary_address, skip_cache=skip_geo_cache, plaats_expected=plaats_hint,
+            )
             if geometry:
                 club['lat'] = geometry['lat']
                 club['lon'] = geometry['lon']
@@ -923,7 +973,7 @@ def geocode_club(club, skip_geo_cache=False):
     if club.get('lat') is None or club.get('lon') is None:
         fb = _club_plaats_centroid_fallback_address(club)
         if fb and fb != address:
-            geometry = geocode_query(fb, skip_cache=skip_geo_cache)
+            geometry = geocode_query(fb, skip_cache=skip_geo_cache, plaats_expected=plaats_hint)
             if geometry:
                 club['lat'] = geometry['lat']
                 club['lon'] = geometry['lon']
