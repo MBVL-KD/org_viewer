@@ -8,14 +8,29 @@ import pydeck as pdk
 import streamlit as st
 from bson import ObjectId
 
+from bond_land import (
+    club_bond_regio,
+    club_matches_national_bond,
+    enrich_club_bond_fields,
+    national_bond_for_land,
+    national_bond_label,
+)
 from de_bundesland import bundesland_filter_label
 from nl_provincie import canonical_nl_provincie_club, normalize_nl_provincienaam
-from scraper import is_valid_de_coords, is_valid_nl_coords
+from scraper import is_valid_be_coords, is_valid_de_coords, is_valid_nl_coords
 
 MAP_VIEWPORT = {
     'NL': {'center_lat': 52.2, 'center_lon': 5.3, 'zoom': 7.0, 'label': 'Nederland'},
     'DE': {'center_lat': 51.1, 'center_lon': 10.4, 'zoom': 5.8, 'label': 'Duitsland'},
+    'BE': {'center_lat': 50.85, 'center_lon': 4.5, 'zoom': 7.5, 'label': 'België (Vlaanderen)'},
 }
+
+# (land_code, weergavenaam)
+SCHOOL_LAND_CHOICES = (
+    ('NL', 'Nederland'),
+    ('DE', 'Duitsland'),
+    ('BE', 'België (Vlaanderen)'),
+)
 
 LIST_VISIBLE_ROWS = 10
 TABLE_ROW_PX = 36
@@ -69,6 +84,8 @@ def _coords_ok_for_land(lat, lon, land_code: str) -> bool:
         return False
     if land_code == 'DE':
         return is_valid_de_coords(lat_f, lon_f)
+    if land_code == 'BE':
+        return is_valid_be_coords(lat_f, lon_f)
     return is_valid_nl_coords(lat_f, lon_f)
 
 
@@ -125,6 +142,14 @@ def _map_empty_messages(
         parts.append(
             f'{invalid_schools} school(s) hebben coördinaten die niet bij dit land passen.'
         )
+    if land_code != 'BE':
+        be_n = schools_coll.count_documents({
+            'land': 'BE', 'lat': {'$ne': None}, 'lon': {'$ne': None},
+        })
+        if be_n:
+            parts.append(
+                f'Tip: kies **België (Vlaanderen)** bij Land — er staan {be_n} BE-scholen met coördinaten.'
+            )
     if land_code == 'NL':
         other = schools_coll.count_documents({
             'land': 'DE', 'lat': {'$ne': None}, 'lon': {'$ne': None},
@@ -133,7 +158,17 @@ def _map_empty_messages(
             parts.append(
                 f'Tip: kies **Duitsland** bij Land — er staan {other} Duitse scholen met coördinaten.'
             )
-    else:
+    elif land_code == 'DE':
+        other = schools_coll.count_documents({
+            '$or': [{'land': 'NL'}, {'land': {'$exists': False}}],
+            'lat': {'$ne': None},
+            'lon': {'$ne': None},
+        })
+        if other:
+            parts.append(
+                f'Tip: kies **Nederland** bij Land — er staan {other} NL-scholen met coördinaten.'
+            )
+    elif land_code == 'BE':
         other = schools_coll.count_documents({
             '$or': [{'land': 'NL'}, {'land': {'$exists': False}}],
             'lat': {'$ne': None},
@@ -151,6 +186,8 @@ def _map_empty_messages(
 def _mongo_school_land_query(land_code: str) -> dict:
     if land_code == 'DE':
         return {'land': 'DE'}
+    if land_code == 'BE':
+        return {'land': 'BE'}
     return {'$or': [{'land': 'NL'}, {'land': {'$exists': False}}, {'land': None}, {'land': ''}]}
 
 
@@ -264,6 +301,14 @@ def _filter_schools_df(
     if search:
         out = out[out['text_search'].str.contains(search, case=False, na=False)]
     return out
+
+
+def _apply_email_filter(df: pd.DataFrame, email_choice: str) -> pd.DataFrame:
+    if email_choice == 'Met e-mail':
+        return df[df['has_email']].copy()
+    if email_choice == 'Zonder e-mail':
+        return df[~df['has_email']].copy()
+    return df
 
 
 def _gemeenten_map_markers(
@@ -386,8 +431,11 @@ def _school_map_club_popup_dialog():
         return
     st.markdown(f"### {pop.get('naam') or '—'}")
     st.caption(f"{pop.get('plaats') or '—'} · {pop.get('provincie_label') or '—'}")
+    if pop.get('bond_land_label'):
+        st.write('**Landelijke bond:**', pop['bond_land_label'])
     if pop.get('bond') and pop.get('bond') != pop.get('provincie_label'):
-        st.caption(f"Bondcode in data: **{pop['bond']}**")
+        bond_lbl = 'Regio' if pop.get('bond_land_label', '').startswith('KBDB') else 'Provinciale bond'
+        st.write(f'**{bond_lbl}:**', pop['bond'])
     if pop.get('secretariaat'):
         st.write('**Secretariaat:**', pop['secretariaat'])
     if pop.get('website'):
@@ -411,6 +459,8 @@ def _clubs_overlay_for_school_filters(
     pc_hi: Optional[int],
     search: str,
     filtered_schools: pd.DataFrame,
+    *,
+    bond_land: str = 'KNDB',
 ) -> pd.DataFrame:
     """Damclubs met lat/lon die bij de schoolfilters horen (provincie; plaats bij ruimtelijke/zoekfilter)."""
     narrow_plaats = bool(gem_sel) or (pc_lo is not None) or (pc_hi is not None) or bool((search or '').strip())
@@ -439,6 +489,8 @@ def _clubs_overlay_for_school_filters(
 
     out_rows = []
     for c in db['clubs'].find():
+        if bond_land and not club_matches_national_bond(c, bond_land):
+            continue
         lat, lon = c.get('lat'), c.get('lon')
         if lat is None or lon is None:
             continue
@@ -471,15 +523,21 @@ def _clubs_overlay_for_school_filters(
 def render_schools(db, map_height: int):
     schools_coll = db['schools']
     sb = st.sidebar
-    sb.header('Filters (scholen)')
-    land_choice = sb.radio(
-        'Land',
-        ['Nederland', 'Duitsland'],
-        horizontal=True,
-        key='school_view_land',
-    )
-    land_code = 'DE' if land_choice == 'Duitsland' else 'NL'
+
+    land_code = _school_land_selectbox(schools_coll, container=st)
+    land_choice = MAP_VIEWPORT[land_code]['label']
     vp = MAP_VIEWPORT[land_code]
+
+    sb.header('Filters (scholen)')
+    sb.caption(f'Land: **{land_choice}**')
+
+    email_sel = sb.radio(
+        'E-mail',
+        ['Alle', 'Met e-mail', 'Zonder e-mail'],
+        horizontal=True,
+        key=f'school_filter_email_{land_code}',
+        help='Filter op aanwezigheid van een e-mailadres in de database.',
+    )
 
     schools = list(schools_coll.find(_mongo_school_land_query(land_code)))
     if not schools:
@@ -487,6 +545,11 @@ def render_schools(db, map_height: int):
             st.info(
                 'Nog geen Duitse scholen in de database. Testimport:\n\n'
                 '`python3 import_schools_de.py --limit 100 --geocode`'
+            )
+        elif land_code == 'BE':
+            st.info(
+                'Nog geen Belgische (Vlaamse) scholen in de database. Testimport:\n\n'
+                '`python3 import_schools_be.py --limit 100 --niveau basis --geocode`'
             )
         else:
             st.info(
@@ -508,8 +571,10 @@ def render_schools(db, map_height: int):
     rows = []
     for s in schools:
         em = s.get('email') or ''
+        em_ok = bool(str(em).strip())
         rows.append({
             '_id': s['_id'],
+            'has_email': em_ok,
             'administratienummer': str(s.get('administratienummer', '') or ''),
             'naam': s.get('naam', ''),
             'plaats': s.get('plaats', ''),
@@ -546,7 +611,12 @@ def render_schools(db, map_height: int):
         postcode_col = 'postcode4'
 
     _ms_help = 'Geen selectie = alles tonen. Meerdere waarden: elk van die waarden (OR binnen dit veld).'
-    prov_label = 'Bundesland' if land_code == 'DE' else 'Provincie'
+    if land_code == 'DE':
+        prov_label = 'Bundesland'
+    elif land_code == 'BE':
+        prov_label = 'Provincie / regio'
+    else:
+        prov_label = 'Provincie'
     prov_opts = sorted(df['provincie'].dropna().unique().tolist())
     prov_sel = sb.multiselect(
         prov_label,
@@ -584,7 +654,7 @@ def render_schools(db, map_height: int):
             f' Alleen uit gekozen {prov_label.lower()}(en).' if prov_sel else ''
         ),
     )
-    if land_code == 'NL':
+    if land_code in ('NL', 'BE'):
         soort_col = 'soort_norm'
         soort_label = 'Onderwijstype'
         soort_opts = [x for x in (
@@ -615,7 +685,7 @@ def render_schools(db, map_height: int):
     sb.caption('Leeg laten = geen onder-/bovengrens. Ongeldige invoer wordt genegeerd.')
     sb.markdown('**Kaartlagen**')
     show_gemeenten_on_map = sb.checkbox(
-        'Gemeenten op kaart' if land_code == 'NL' else 'Städte op kaart',
+        'Gemeenten op kaart' if land_code in ('NL', 'BE') else 'Städte op kaart',
         value=False,
         key=f'school_map_show_gemeenten_{land_code}',
         help=(
@@ -649,6 +719,7 @@ def render_schools(db, map_height: int):
         df, prov_sel, gem_sel, soort_sel, status_sel, pc_lo, pc_hi, search,
         postcode_col=postcode_col, soort_col=soort_col,
     )
+    filtered = _apply_email_filter(filtered, email_sel)
 
     filtered_reset = filtered.reset_index(drop=True)
 
@@ -667,7 +738,7 @@ def render_schools(db, map_height: int):
     with d2:
         st.download_button('Download alle scholen (CSV)', export_csv, 'scholen_alle.csv', 'text/csv')
 
-    if land_code == 'NL':
+    if land_code in ('NL', 'BE'):
         display_cols = [
             'administratienummer', 'provincie', 'gemeente', 'postcode_vestiging', 'plaats', 'naam',
             'soort_norm', 'status', 'website', 'lat', 'lon',
@@ -727,8 +798,10 @@ def render_schools(db, map_height: int):
 
         clubs_raw = pd.DataFrame()
         if show_clubs_on_map:
+            nl_bond = national_bond_for_land('NL') or 'KNDB'
             clubs_raw = _clubs_overlay_for_school_filters(
                 db, prov_sel, gem_sel, pc_lo, pc_hi, search, filtered_reset,
+                bond_land=nl_bond,
             )
         valid_clubs = pd.DataFrame()
         invalid_clubs = 0

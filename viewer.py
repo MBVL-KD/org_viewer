@@ -10,6 +10,16 @@ from pymongo import MongoClient
 import pandas as pd
 import pydeck as pdk
 
+from bond_land import (
+    bond_land_codes_in_data,
+    club_bond_onder,
+    club_bond_onder_label,
+    club_bond_provinciaal,
+    club_bond_regio,
+    enrich_club_bond_fields,
+    national_bond_label,
+    sub_bond_filter_title,
+)
 from nl_provincie import canonical_nl_provincie_club
 
 HERE = Path(__file__).resolve().parent
@@ -82,6 +92,14 @@ def _clean_emails(seq):
     return [e for e in (seq or []) if e and not _is_obfuscated_email(e)]
 
 
+def _apply_club_email_filter(df: pd.DataFrame, email_choice: str) -> pd.DataFrame:
+    if email_choice == 'Met e-mail':
+        return df[df['has_email']].copy()
+    if email_choice == 'Zonder e-mail':
+        return df[~df['has_email']].copy()
+    return df
+
+
 def _serialize_mongo_doc(doc):
     return json.loads(json.dumps(doc, default=str))
 
@@ -126,14 +144,12 @@ TABLE_HEADER_PX = 52
 CLUB_TABLE_HEIGHT = LIST_VISIBLE_ROWS * TABLE_ROW_PX + TABLE_HEADER_PX
 
 
-def _bond_filter_label(bond_code: str) -> str:
-    code = str(bond_code or '').strip()
-    if not code:
-        return ''
-    prov = canonical_nl_provincie_club(code)
-    if prov and prov != code:
-        return f'{code} ({prov})'
-    return code
+def _map_bbox_for_bond_land(bond_land: str):
+    """Kaartvenster per landelijke bond (NL vs BE)."""
+    code = (bond_land or 'KNDB').strip().upper()
+    if code == 'KBDB':
+        return (49.4, 51.6, 2.4, 6.5)
+    return (50.5, 53.7, 3.0, 7.5)
 
 
 def _pydeck_first_picked_object(selection):
@@ -195,11 +211,17 @@ def render_clubs(map_height):
 
     rows = []
     for club in clubs:
+        club = enrich_club_bond_fields(dict(club))
         details = club.get('details', {}) or {}
-        eml = details.get('emails', []) or []
+        eml = _clean_emails(details.get('emails', []) or [])
         rows.append({
             '_id': club['_id'],
-            'provincie': club.get('provincie', ''),
+            'land': club.get('land', 'NL'),
+            'bond_land': club.get('bond_land', ''),
+            'bond_regio': club_bond_regio(club),
+            'bond_onder': club_bond_onder(club),
+            'bond_onder_label': club_bond_onder_label(club),
+            'provincie': club_bond_provinciaal(club),
             'plaats': club.get('plaats', ''),
             'naam': club.get('naam', ''),
             'secretariaat': club.get('secretariaat', ''),
@@ -211,6 +233,7 @@ def render_clubs(map_height):
             'club_url': club.get('club_url', ''),
             'logo': club.get('logo', ''),
             'emails': eml,
+            'has_email': bool(eml),
             'emails_search': ' '.join(str(e) for e in eml if e),
             'telefoons': details.get('telefoons', []),
             'imported_at': club.get('imported_at', ''),
@@ -220,27 +243,56 @@ def render_clubs(map_height):
 
     df = pd.DataFrame(rows)
     show_sidebar = st.sidebar
-    show_sidebar.header('Filters')
-    bond_opts = sorted(df['provincie'].dropna().unique().tolist(), key=lambda c: _bond_filter_label(c).lower())
-    province_filter = show_sidebar.multiselect(
-        'Bond',
-        options=bond_opts,
+    show_sidebar.header('Filters (damclubs)')
+    bond_land_opts = bond_land_codes_in_data(clubs)
+    if not bond_land_opts:
+        bond_land_opts = ['KNDB']
+    bond_land_sel = show_sidebar.selectbox(
+        'Landelijke bond',
+        options=bond_land_opts,
+        key='club_filter_bond_land',
+        format_func=national_bond_label,
+        help='Eerst landelijke bond (KNDB of KBDB). Daarna filter op onderliggende bond of regio.',
+    )
+    onder_pool = df[df['bond_land'] == bond_land_sel] if bond_land_sel else df
+    onder_title = sub_bond_filter_title(bond_land_sel)
+    onder_opts = sorted(
+        [c for c in onder_pool['bond_onder'].dropna().unique().tolist() if str(c).strip()],
+        key=lambda c: (onder_pool[onder_pool['bond_onder'] == c]['bond_onder_label'].iloc[0] if len(onder_pool[onder_pool['bond_onder'] == c]) else c).lower(),
+    )
+    onder_filter = show_sidebar.multiselect(
+        onder_title,
+        options=onder_opts,
         default=[],
-        key='club_filter_prov',
-        format_func=_bond_filter_label,
-        help='Geen selectie = alle bonden. Meerdere bonden: OR. Tussen haakjes: provincie.',
+        key='club_filter_onder',
+        format_func=lambda code: (
+            onder_pool[onder_pool['bond_onder'] == code]['bond_onder_label'].iloc[0]
+            if code and len(onder_pool[onder_pool['bond_onder'] == code])
+            else code
+        ),
+        help=f'Geen selectie = alle {onder_title.lower()}n binnen de gekozen landelijke bond.',
     )
     website_only = show_sidebar.checkbox('Alleen clubs met website', value=False)
+    email_sel = show_sidebar.radio(
+        'E-mail',
+        ['Alle', 'Met e-mail', 'Zonder e-mail'],
+        horizontal=True,
+        key='club_filter_email',
+    )
 
     search_term = st.text_input('Zoek club, plaats, provincie, website of contact')
 
     filtered = df.copy()
-    if province_filter:
-        filtered = filtered[filtered['provincie'].isin(province_filter)]
+    if bond_land_sel:
+        filtered = filtered[filtered['bond_land'] == bond_land_sel]
+    if onder_filter:
+        filtered = filtered[filtered['bond_onder'].isin(onder_filter)]
     if search_term:
         search_mask = (
             filtered['naam'].str.contains(search_term, case=False, na=False) |
             filtered['plaats'].str.contains(search_term, case=False, na=False) |
+            filtered['bond_onder_label'].str.contains(search_term, case=False, na=False) |
+            filtered['bond_regio'].str.contains(search_term, case=False, na=False) |
             filtered['provincie'].str.contains(search_term, case=False, na=False) |
             filtered['website'].str.contains(search_term, case=False, na=False) |
             filtered['bond_url'].str.contains(search_term, case=False, na=False) |
@@ -250,6 +302,7 @@ def render_clubs(map_height):
         filtered = filtered[search_mask]
     if website_only:
         filtered = filtered[filtered['website'].astype(bool)]
+    filtered = _apply_club_email_filter(filtered, email_sel)
 
     filtered_reset = filtered.reset_index(drop=True)
 
@@ -281,8 +334,9 @@ def render_clubs(map_height):
             help='Volledige export van alle clubs als platte CSV (geneste velden als JSON-tekst).',
         )
 
-    display_cols = ['provincie', 'plaats', 'naam', 'secretariaat', 'clublokaal', 'website', 'lat', 'lon']
-    table_df = filtered_reset[display_cols] if len(filtered_reset) else pd.DataFrame(columns=display_cols)
+    onder_col = sub_bond_filter_title(bond_land_sel)
+    display_cols = ['bond_onder_label', 'plaats', 'naam', 'secretariaat', 'clublokaal', 'website', 'lat', 'lon']
+    table_df = filtered_reset[display_cols].rename(columns={'bond_onder_label': onder_col}) if len(filtered_reset) else pd.DataFrame(columns=[onder_col, 'plaats', 'naam', 'secretariaat', 'clublokaal', 'website', 'lat', 'lon'])
 
     pre_selected_id = st.session_state.get('selected_club_id')
     selection_default = None
@@ -323,14 +377,19 @@ def render_clubs(map_height):
         else:
             map_df = map_df.rename(columns={'lat': 'latitude', 'lon': 'longitude'})
             map_df['club_id'] = map_df['_id'].astype(str)
+            lat_min, lat_max, lon_min, lon_max = _map_bbox_for_bond_land(bond_land_sel)
             valid_map_df = map_df[
-                (map_df['latitude'] >= 50.5) & (map_df['latitude'] <= 53.7) &
-                (map_df['longitude'] >= 3.0) & (map_df['longitude'] <= 7.5)
+                (map_df['latitude'] >= lat_min) & (map_df['latitude'] <= lat_max) &
+                (map_df['longitude'] >= lon_min) & (map_df['longitude'] <= lon_max)
             ].copy()
             invalid_count = len(map_df) - len(valid_map_df)
 
             if valid_map_df.empty:
-                st.warning('Geen valide Nederlandse coördinaten voor deze selectie (of alle punten vallen buiten het NL-venster).')
+                land_hint = 'Belgische' if bond_land_sel == 'KBDB' else 'Nederlandse'
+                st.warning(
+                    f'Geen valide {land_hint} coördinaten voor deze selectie '
+                    f'(of alle punten vallen buiten het kaartvenster).'
+                )
             else:
                 zoom_close = 12.8
                 center_lat = float(valid_map_df['latitude'].median())
@@ -423,7 +482,7 @@ def render_clubs(map_height):
 
                 st.caption('Klik op een punt om die club te selecteren; clubgegevens openen automatisch.')
                 if invalid_count:
-                    st.warning(f'{invalid_count} club(s) buiten het NL-venster worden niet getoond.')
+                    st.warning(f'{invalid_count} club(s) buiten het kaartvenster van deze landelijke bond worden niet getoond.')
 
     selected_id = st.session_state.selected_club_id
     selected = next((item for item in rows if item['_id'] == selected_id), None) if selected_id is not None else None
@@ -437,7 +496,15 @@ def render_clubs(map_height):
             st.info('Klik op een rij in de tabel of op een punt op de kaart.')
         else:
             st.markdown(f"### {selected['naam']}")
-            st.write('**Provincie:**', selected['provincie'])
+            bl = selected.get('bond_land', '')
+            st.write('**Landelijke bond:**', national_bond_label(bl))
+            if bl == 'KBDB':
+                st.write('**Regio:**', selected.get('bond_regio') or '—')
+            else:
+                st.write('**Provinciale bond:**', selected.get('provincie') or '—')
+                prov_kaart = canonical_nl_provincie_club(selected.get('provincie'))
+                if prov_kaart and prov_kaart != selected.get('provincie'):
+                    st.write('**Provincie (kaart):**', prov_kaart)
             st.write('**Plaats:**', selected['plaats'])
             st.write('**Clublokaal:**', selected['clublokaal'])
             st.write('**Secretariaat:**', selected['secretariaat'])

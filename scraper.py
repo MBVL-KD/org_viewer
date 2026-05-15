@@ -10,6 +10,7 @@ import certifi
 from bs4 import BeautifulSoup
 from pymongo import MongoClient
 
+from bond_land import enrich_club_bond_fields
 from nl_provincie import canonical_nl_provincie_club, normalize_nl_provincienaam
 
 HERE = Path(__file__).resolve().parent
@@ -208,6 +209,41 @@ def is_valid_de_coords(lat, lon):
     except Exception:
         return False
     return 47.2 <= lat <= 55.2 and 5.8 <= lon <= 15.1
+
+
+def is_valid_be_coords(lat, lon):
+    try:
+        lat = float(lat)
+        lon = float(lon)
+    except Exception:
+        return False
+    return 49.4 <= lat <= 51.6 and 2.4 <= lon <= 6.5
+
+
+def club_land_code(club) -> str:
+    return (club.get('land') or 'NL').strip().upper()
+
+
+def is_valid_coords_for_club(club, lat, lon) -> bool:
+    land = club_land_code(club)
+    if land == 'BE':
+        return is_valid_be_coords(lat, lon)
+    if land == 'DE':
+        return is_valid_de_coords(lat, lon)
+    return is_valid_nl_coords(lat, lon)
+
+
+def geocode_country_suffix(club) -> str:
+    land = club_land_code(club)
+    if land == 'BE':
+        return 'België'
+    if land == 'DE':
+        return 'Deutschland'
+    return 'Nederland'
+
+
+def geocode_countrycodes(club) -> str:
+    return club_land_code(club).lower()
 
 
 def _nominatim_hit_is_country(hit, country_code: str) -> bool:
@@ -420,7 +456,7 @@ def parse_kndb_clubs():
             if anchor:
                 club_url = absolute_url(anchor['href'].strip(), 'https://www.kndb.nl')
 
-            clubs.append({
+            clubs.append(enrich_club_bond_fields({
                 'provincie': province_code,
                 'bond_url': bond_url,
                 'plaats': normalize(cells[0].get_text()),
@@ -430,7 +466,7 @@ def parse_kndb_clubs():
                 'club_url': club_url,
                 'details': {'website': '', 'locaties': [], 'contactpersonen': [], 'emails': [], 'telefoons': []},
                 'imported_at': time.strftime('%Y-%m-%dT%H:%M:%SZ')
-            })
+            }))
 
     return clubs
 
@@ -681,7 +717,12 @@ def geocode_query(query, skip_cache=False, plaats_expected=None, countrycodes='n
                 return {**cached, 'provincie': pn}
         return cached
 
-    coord_ok = is_valid_de_coords if cc == 'de' else is_valid_nl_coords
+    if cc == 'de':
+        coord_ok = is_valid_de_coords
+    elif cc == 'be':
+        coord_ok = is_valid_be_coords
+    else:
+        coord_ok = is_valid_nl_coords
     country_hit_ok = lambda h: _nominatim_hit_is_country(h, cc)
 
     try:
@@ -834,7 +875,7 @@ def _club_plaats_centroid_fallback_address(club):
         return ''
     parts = [plaats]
     _append_provincie_en_plaats_hints(parts, club)
-    parts.append('Nederland')
+    parts.append(geocode_country_suffix(club))
     return ', '.join(parts)
 
 
@@ -860,7 +901,7 @@ def club_geocode_plaats_mismatch(club, reverse_data):
     plaats = (club.get('plaats') or '').strip()
     if lat is None or lon is None or not reverse_data or not plaats:
         return False
-    if not is_valid_nl_coords(lat, lon):
+    if not is_valid_coords_for_club(club, lat, lon):
         return False
     hay = _reverse_payload_haystack_for_plaats(reverse_data)
     return not _plaats_matches_reverse_haystack(plaats, hay)
@@ -913,8 +954,9 @@ def _geocode_address_from_location(loc, club):
     if not parts:
         return ''
     _append_provincie_en_plaats_hints(parts, club)
-    _maybe_append_oosterend_island(parts, club)
-    parts.append('Nederland')
+    if club_land_code(club) == 'NL':
+        _maybe_append_oosterend_island(parts, club)
+    parts.append(geocode_country_suffix(club))
     return ', '.join(parts)
 
 
@@ -927,8 +969,9 @@ def _geocode_address_clublokaal_fallback(club):
     if plaats:
         parts.append(plaats)
     _append_provincie_en_plaats_hints(parts, club)
-    _maybe_append_oosterend_island(parts, club)
-    parts.append('Nederland')
+    if club_land_code(club) == 'NL':
+        _maybe_append_oosterend_island(parts, club)
+    parts.append(geocode_country_suffix(club))
     return ', '.join(parts)
 
 
@@ -946,7 +989,7 @@ def _discard_geocode_if_plaats_mismatch(club) -> None:
 
 
 def geocode_club(club, skip_geo_cache=False):
-    if club.get('lat') and club.get('lon') and is_valid_nl_coords(club['lat'], club['lon']):
+    if club.get('lat') and club.get('lon') and is_valid_coords_for_club(club, club['lat'], club['lon']):
         return club
     if club.get('lat') and club.get('lon'):
         club.pop('lat', None)
@@ -971,7 +1014,10 @@ def geocode_club(club, skip_geo_cache=False):
 
     plaats_hint = (club.get('plaats') or '').strip() or None
 
-    geometry = geocode_query(address, skip_cache=skip_geo_cache, plaats_expected=plaats_hint)
+    cc = geocode_countrycodes(club)
+    geometry = geocode_query(
+        address, skip_cache=skip_geo_cache, plaats_expected=plaats_hint, countrycodes=cc,
+    )
     if geometry:
         club['lat'] = geometry['lat']
         club['lon'] = geometry['lon']
@@ -980,7 +1026,10 @@ def geocode_club(club, skip_geo_cache=False):
         secretary_address = get_secretary_address(club)
         if secretary_address and secretary_address != address:
             geometry = geocode_query(
-                secretary_address, skip_cache=skip_geo_cache, plaats_expected=plaats_hint,
+                secretary_address,
+                skip_cache=skip_geo_cache,
+                plaats_expected=plaats_hint,
+                countrycodes=cc,
             )
             if geometry:
                 club['lat'] = geometry['lat']
@@ -990,7 +1039,9 @@ def geocode_club(club, skip_geo_cache=False):
     if club.get('lat') is None or club.get('lon') is None:
         fb = _club_plaats_centroid_fallback_address(club)
         if fb and fb != address:
-            geometry = geocode_query(fb, skip_cache=skip_geo_cache, plaats_expected=plaats_hint)
+            geometry = geocode_query(
+                fb, skip_cache=skip_geo_cache, plaats_expected=plaats_hint, countrycodes=cc,
+            )
             if geometry:
                 club['lat'] = geometry['lat']
                 club['lon'] = geometry['lon']
@@ -1000,14 +1051,32 @@ def geocode_club(club, skip_geo_cache=False):
 
 
 def upsert_club(club):
+    club = enrich_club_bond_fields(club)
     filter_query = {
         'naam': club['naam'],
         'plaats': club['plaats'],
-        'provincie': club['provincie'],
+        'land': club.get('land', 'NL'),
     }
+    if club.get('land') == 'BE':
+        filter_query['bond_regio'] = club.get('bond_regio') or club.get('provincie', '')
+    else:
+        filter_query['provincie'] = club.get('provincie', '')
     club['updated_at'] = time.strftime('%Y-%m-%dT%H:%M:%SZ')
     payload = {k: v for k, v in club.items() if k != '_id'}
     collection.update_one(filter_query, {'$set': payload}, upsert=True)
+
+
+def backfill_club_bond_land():
+    """Zet land=NL en bond_land=KNDB op bestaande clubs (eenmalig na upgrade)."""
+    n = 0
+    for doc in collection.find():
+        enriched = enrich_club_bond_fields(dict(doc))
+        collection.update_one(
+            {'_id': doc['_id']},
+            {'$set': {'land': enriched['land'], 'bond_land': enriched.get('bond_land', '')}},
+        )
+        n += 1
+    print(f'[bond] {n} club(s): land/bond_land bijgewerkt.', flush=True)
 
 
 def find_logo_on_website(website):
@@ -1146,6 +1215,16 @@ def main():
         also_missing = '--also-missing' in sys.argv
         also_plaats_mismatch = '--also-plaats-mismatch' in sys.argv
         recheck_geocodes(also_missing=also_missing, also_plaats_mismatch=also_plaats_mismatch)
+        return
+    if '--backfill-bond-land' in sys.argv:
+        ensure_mongo()
+        backfill_club_bond_land()
+        return
+    if '--import-kbdb' in sys.argv:
+        from scraper_kbdb import import_kbdb_clubs
+        ensure_mongo()
+        geocode = '--no-geocode' not in sys.argv
+        import_kbdb_clubs(geocode=geocode)
         return
     import_all()
 
