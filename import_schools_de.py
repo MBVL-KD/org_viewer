@@ -138,6 +138,7 @@ def api_record_to_document(rec: dict, bron: str) -> Optional[dict]:
         'telefoon': _norm(rec.get('phone')),
         'fax': _norm(rec.get('fax')),
         'email': _norm(rec.get('email')),
+        'email_bron': 'jedeschule' if _norm(rec.get('email')) else '',
         'website': _normalize_website(_norm(rec.get('website'))),
         'provider': _norm(rec.get('provider')),
         'bron_bestand': bron,
@@ -197,6 +198,24 @@ def _vestigings_adres_de(doc: dict) -> str:
     return ', '.join(parts) + ', Deutschland'
 
 
+def _dedupe_api_records(records: List[dict]) -> List[dict]:
+    """API-pagination levert dezelfde school-id meerdere keren; hou nieuwste record."""
+    by_id: Dict[str, dict] = {}
+    for rec in records:
+        sid = _norm(rec.get('id'))
+        if not sid:
+            continue
+        prev = by_id.get(sid)
+        if prev is None:
+            by_id[sid] = rec
+            continue
+        ts_new = str(rec.get('update_timestamp') or '')
+        ts_old = str(prev.get('update_timestamp') or '')
+        if ts_new >= ts_old:
+            by_id[sid] = rec
+    return list(by_id.values())
+
+
 def fetch_api_schools(limit: Optional[int], page_size: int = 100) -> List[dict]:
     out: List[dict] = []
     skip = 0
@@ -227,6 +246,12 @@ def fetch_api_schools(limit: Optional[int], page_size: int = 100) -> List[dict]:
             out = out[:limit]
             break
         time.sleep(0.3)
+    raw = len(out)
+    out = _dedupe_api_records(out)
+    if raw != len(out):
+        print(f'  API: {raw} records → {len(out)} unieke scholen na dedup.', flush=True)
+    if limit is not None:
+        out = out[:limit]
     return out
 
 
@@ -271,21 +296,38 @@ def _merge_preserve_coords(doc: dict) -> None:
         doc['lon'] = existing['lon']
 
 
-def upsert_documents(docs: Iterable[dict]) -> Tuple[int, Set[str]]:
+def upsert_documents(docs: Iterable[dict], batch_size: int = 500) -> Tuple[int, Set[str]]:
+    from pymongo import UpdateOne
+
     total = 0
     ids: Set[str] = set()
+    ops: List[UpdateOne] = []
+
+    def flush():
+        nonlocal ops, total
+        if not ops:
+            return
+        schools_coll.bulk_write(ops, ordered=False)
+        total += len(ops)
+        print(f'  Mongo: {total} upserts…', flush=True)
+        ops.clear()
+
     for doc in docs:
         if not doc:
             continue
         ids.add(doc['administratienummer'])
         _merge_preserve_email(doc)
         _merge_preserve_coords(doc)
-        schools_coll.update_one(
-            {'administratienummer': doc['administratienummer'], 'land': 'DE'},
-            {'$set': doc},
-            upsert=True,
+        ops.append(
+            UpdateOne(
+                {'administratienummer': doc['administratienummer'], 'land': 'DE'},
+                {'$set': doc},
+                upsert=True,
+            )
         )
-        total += 1
+        if len(ops) >= batch_size:
+            flush()
+    flush()
     return total, ids
 
 
@@ -294,17 +336,54 @@ def import_from_api(limit: Optional[int]) -> Tuple[int, Set[str]]:
     docs = [api_record_to_document(r, 'jedeschule-api') for r in records]
     docs = [d for d in docs if d]
     n, ids = upsert_documents(docs)
-    print(f'JedeSchule API: {n} scholen geïmporteerd/upsert.', flush=True)
+    print(f'JedeSchule API: {n} unieke scholen geïmporteerd/upsert.', flush=True)
     return n, ids
+
+
+def import_from_csv_stream(path: Path, limit: Optional[int]) -> Tuple[int, Set[str]]:
+    """Lees grote CSV in chunks (aanbevolen: 34k unieke scholen, meer e-mails dan API)."""
+    usecols = [
+        'id', 'name', 'address', 'address2', 'zip', 'city', 'website', 'email',
+        'school_type', 'legal_status', 'provider', 'fax', 'phone', 'state',
+        'latitude', 'longitude', 'update_timestamp',
+    ]
+    total = 0
+    ids: Set[str] = set()
+    chunk_docs: List[dict] = []
+    chunk_rows = 0
+    bron = path.name
+
+    for chunk in pd.read_csv(
+        path,
+        dtype=str,
+        usecols=lambda c: c in usecols,
+        encoding='utf-8-sig',
+        chunksize=2000,
+    ):
+        chunk = chunk.fillna('')
+        for _, row in chunk.iterrows():
+            doc = csv_row_to_document(row, bron)
+            if not doc:
+                continue
+            chunk_docs.append(doc)
+            chunk_rows += 1
+            if limit is not None and chunk_rows >= limit:
+                break
+        if chunk_docs:
+            n, batch_ids = upsert_documents(chunk_docs)
+            total += n
+            ids |= batch_ids
+            chunk_docs = []
+        print(f'  CSV: {chunk_rows} rijen verwerkt…', flush=True)
+        if limit is not None and chunk_rows >= limit:
+            break
+
+    print(f'{path.name}: {total} scholen geïmporteerd/upsert ({len(ids)} unieke ids).', flush=True)
+    return total, ids
 
 
 def import_from_csv(path: Path, limit: Optional[int]) -> Tuple[int, Set[str]]:
-    rows = read_csv_schools(path, limit=limit)
-    docs = [csv_row_to_document(row, path.name) for row in rows]
-    docs = [d for d in docs if d]
-    n, ids = upsert_documents(docs)
-    print(f'{path.name}: {n} rijen geïmporteerd/upsert.', flush=True)
-    return n, ids
+    return import_from_csv_stream(path, limit=limit)
 
 
 def prune_de_not_in(admin_ids: Set[str]) -> int:
@@ -364,12 +443,16 @@ def geocode_de_schools_without_coords(limit: Optional[int] = None):
     print(f'[geo DE] Klaar: {count} gegeocodeerd, {miss} miss, {skip} zonder adres.', flush=True)
 
 
-def run_scrape_missing_emails_de(limit: Optional[int], delay_s: float = 0.7):
+def run_scrape_missing_emails_de(
+    limit: Optional[int],
+    delay_s: float = 0.7,
+    http_timeout: float = 10.0,
+):
     from import_schools import (
         MAX_SCRAPE_URLS_PER_SCHOOL,
+        _discover_contact_urls_from_homepage,
         _normalize_website,
         _pick_best_email,
-        scrape_email_for_document,
     )
     from scraper import EMAIL_REGEX, scrape_website_contact_info
 
@@ -379,8 +462,15 @@ def run_scrape_missing_emails_de(limit: Optional[int], delay_s: float = 0.7):
         'website': {'$exists': True, '$nin': [None, '']},
     }
     work = list(schools_coll.find(q))
-    updated = 0
+    total = len(work)
+    print(
+        f'[email DE] Start: {total} school(len) zonder e-mail mét website '
+        f'(limiet={"geen" if limit is None else limit}).',
+        flush=True,
+    )
+    updated = seen = 0
     for doc in work:
+        seen += 1
         if limit is not None and updated >= limit:
             break
         website = doc.get('website') or ''
@@ -388,6 +478,7 @@ def run_scrape_missing_emails_de(limit: Optional[int], delay_s: float = 0.7):
         if not home:
             continue
         urls = [home]
+        urls.extend(_discover_contact_urls_from_homepage(home, http_timeout))
         root = home.rstrip('/')
         for suf in DE_CONTACT_URL_SUFFIXES:
             u = root + suf
@@ -395,8 +486,9 @@ def run_scrape_missing_emails_de(limit: Optional[int], delay_s: float = 0.7):
                 urls.append(u)
         urls = urls[:MAX_SCRAPE_URLS_PER_SCHOOL]
         collected: List[str] = []
+        found = False
         for url in urls:
-            info = scrape_website_contact_info(url, timeout=10.0)
+            info = scrape_website_contact_info(url, timeout=http_timeout)
             collected.extend(info.get('emails') or [])
             best = _pick_best_email(collected)
             if best and EMAIL_REGEX.search(best):
@@ -405,19 +497,34 @@ def run_scrape_missing_emails_de(limit: Optional[int], delay_s: float = 0.7):
                     {'$set': {
                         'email': best,
                         'email_scraped_at': time.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                        'email_bron': 'website-scrape',
                     }},
                 )
                 updated += 1
-                print(f'  scrape DE: {doc.get("naam")} -> {best}', flush=True)
+                found = True
                 break
             time.sleep(delay_s)
-    print(f'[email DE] Klaar: {updated} bijgewerkt.', flush=True)
+        if seen == 1 or seen % 25 == 0:
+            pct = (100.0 * seen / total) if total else 0.0
+            last = 'OK' if found else 'geen e-mail'
+            print(
+                f'[email DE] {time.strftime("%H:%M:%S")} {seen}/{total} ({pct:.1f}%) '
+                f'— {updated} toegevoegd | laatste: {last} | {doc.get("naam")}',
+                flush=True,
+            )
+    print(f'[email DE] Klaar: {updated} bijgewerkt van {seen} bekeken.', flush=True)
+    return updated
 
 
 def main():
     parser = argparse.ArgumentParser(description='Duitse scholen (JedeSchule) → MongoDB.')
-    parser.add_argument('--csv', type=str, default='', help='Pad naar JedeSchule CSV (anders API)')
-    parser.add_argument('--download-csv', action='store_true', help=f'Download {JEDESCHULE_CSV} naar --csv-pad')
+    parser.add_argument('--csv', type=str, default='', help='Pad naar JedeSchule CSV')
+    parser.add_argument(
+        '--api',
+        action='store_true',
+        help='Gebruik API i.p.v. CSV (CSV is completer: 34k uniek, meer e-mails)',
+    )
+    parser.add_argument('--download-csv', action='store_true', help=f'Download {JEDESCHULE_CSV}')
     parser.add_argument('--csv-out', type=str, default='', help='Doelpad bij --download-csv')
     parser.add_argument('--limit', type=int, default=None, metavar='N', help='Max. aantal scholen (test)')
     parser.add_argument('--prune-not-in-upload', action='store_true', help='Verwijder DE-records niet in deze run')
@@ -438,7 +545,31 @@ def main():
         geocode_de_schools_without_coords(limit=args.limit)
         return
 
-    if args.download_csv:
+    csv_path = args.csv.strip()
+    if args.download_csv and csv_path:
+        dest = Path(args.csv_out or csv_path).expanduser()
+        print(f'Download {JEDESCHULE_CSV} → {dest} …', flush=True)
+        r = requests.get(JEDESCHULE_CSV, headers={'User-Agent': USER_AGENT}, timeout=600, stream=True)
+        r.raise_for_status()
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with open(dest, 'wb') as f:
+            for chunk in r.iter_content(chunk_size=1 << 20):
+                if chunk:
+                    f.write(chunk)
+        print(f'Opgeslagen: {dest} ({dest.stat().st_size // (1 << 20)} MB)', flush=True)
+        csv_path = str(dest)
+
+    csv_path = csv_path or args.csv.strip()
+    if not csv_path and not args.api:
+        default_csv = Path.home() / 'Downloads' / 'jedeschule-latest.csv'
+        if default_csv.is_file():
+            csv_path = str(default_csv)
+            print(f'Gebruik lokale CSV: {default_csv}', flush=True)
+        else:
+            print(f'Geen CSV gevonden; download {JEDESCHULE_CSV} …', flush=True)
+            args.download_csv = True
+
+    if args.download_csv and not csv_path:
         dest = Path(args.csv_out or Path.home() / 'Downloads' / 'jedeschule-latest.csv').expanduser()
         print(f'Download {JEDESCHULE_CSV} → {dest} …', flush=True)
         r = requests.get(JEDESCHULE_CSV, headers={'User-Agent': USER_AGENT}, timeout=600, stream=True)
@@ -448,15 +579,15 @@ def main():
             for chunk in r.iter_content(chunk_size=1 << 20):
                 if chunk:
                     f.write(chunk)
-        print(f'Opgeslagen: {dest} ({dest.stat().st_size // (1<<20)} MB)', flush=True)
-        args.csv = str(dest)
+        print(f'Opgeslagen: {dest} ({dest.stat().st_size // (1 << 20)} MB)', flush=True)
+        csv_path = str(dest)
 
-    if args.csv:
-        n, ids = import_from_csv(Path(args.csv).expanduser(), limit=args.limit)
+    if csv_path:
+        n, ids = import_from_csv(Path(csv_path).expanduser(), limit=args.limit)
     else:
         n, ids = import_from_api(limit=args.limit)
 
-    print(f'Totaal: {n} scholen (land=DE).', flush=True)
+    print(f'Totaal: {len(ids)} unieke scholen (land=DE), {n} upserts.', flush=True)
 
     if args.prune_not_in_upload:
         nd = prune_de_not_in(ids)

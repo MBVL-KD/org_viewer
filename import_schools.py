@@ -51,6 +51,7 @@ from dotenv import load_dotenv
 from pymongo import MongoClient
 
 from nl_provincie import normalize_nl_provincienaam
+from nl_school_soort import normalize_nl_school_soort
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
@@ -267,6 +268,7 @@ def row_to_document(row: pd.Series, bron: str) -> Optional[dict]:
         'provincie': normalize_nl_provincienaam(_rg(lu, 'Provincie', 'PROVINCIE')),
         'status': _rg(lu, 'Status', 'STATUS'),
         'soort': soort,
+        'soort_norm': normalize_nl_school_soort(soort, bron, soort_ho=soort_ho),
         'straat_vestiging': straat,
         'huisnr_vestiging': hn,
         'huisnr_toev_vestiging': hnt,
@@ -607,6 +609,32 @@ def run_scrape_missing_emails(
     return updated
 
 
+def backfill_nl_soort_norm() -> int:
+    """Zet soort_norm op alle NL-scholen (bestaande Mongo-records)."""
+    from pymongo import UpdateOne
+
+    q = {'$or': [{'land': 'NL'}, {'land': {'$exists': False}}, {'land': None}, {'land': ''}]}
+    ops: List[UpdateOne] = []
+    updated = 0
+    total = 0
+    for doc in schools_coll.find(q, {'soort': 1, 'bron_bestand': 1, 'soort_norm': 1}):
+        total += 1
+        soort = doc.get('soort') or ''
+        bron = doc.get('bron_bestand') or ''
+        norm = normalize_nl_school_soort(soort, bron, soort_ho=soort if 'hbo-en-wo' in bron.lower() else '')
+        if doc.get('soort_norm') == norm:
+            continue
+        ops.append(UpdateOne({'_id': doc['_id']}, {'$set': {'soort_norm': norm}}))
+        updated += 1
+        if len(ops) >= 500:
+            schools_coll.bulk_write(ops, ordered=False)
+            ops.clear()
+    if ops:
+        schools_coll.bulk_write(ops, ordered=False)
+    print(f'[soort_norm] {updated}/{total} NL-school(en) bijgewerkt.', flush=True)
+    return updated
+
+
 def geocode_schools_without_coords():
     from scraper import geocode_query
 
@@ -727,6 +755,11 @@ def main():
         action='store_true',
         help='Geen import: alleen scholen zonder lat/lon geocoderen (Nominatim)',
     )
+    parser.add_argument(
+        '--normalize-soorten',
+        action='store_true',
+        help='Geen import: vul soort_norm in voor alle NL-scholen in MongoDB',
+    )
     args = parser.parse_args()
 
     _mongo_ping()
@@ -747,6 +780,10 @@ def main():
     if args.geocode_only:
         print('Start geocoding (--geocode-only, geen import)...', flush=True)
         geocode_schools_without_coords()
+        return
+
+    if args.normalize_soorten:
+        backfill_nl_soort_norm()
         return
 
     paths = [Path(p).expanduser() for p in args.data_files if p]

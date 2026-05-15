@@ -242,6 +242,7 @@ def _filter_schools_df(
     *,
     skip_gemeente: bool = False,
     postcode_col: str = 'postcode4',
+    soort_col: str = 'soort',
 ) -> pd.DataFrame:
     """Pas schoolfilters toe; skip_gemeente=True voor gemeenten-markers op de kaart."""
     out = df.copy()
@@ -249,8 +250,8 @@ def _filter_schools_df(
         out = out[out['provincie'].isin(prov_sel)]
     if gem_sel and not skip_gemeente:
         out = out[out['gemeente'].isin(gem_sel)]
-    if soort_sel:
-        out = out[out['soort'].isin(soort_sel)]
+    if soort_sel and soort_col in out.columns:
+        out = out[out[soort_col].isin(soort_sel)]
     if status_sel:
         out = out[out['status'].isin(status_sel)]
     if pc_lo is not None or pc_hi is not None:
@@ -277,11 +278,12 @@ def _gemeenten_map_markers(
     *,
     postcode_col: str = 'postcode4',
     place_label: str = 'Gemeente',
+    soort_col: str = 'soort',
 ) -> pd.DataFrame:
     """Klikbare plaatscentra (uit scholen met coördinaten), rekening houdend met alle filters behalve gemeente."""
     base = _filter_schools_df(
         df, prov_sel, [], soort_sel, status_sel, pc_lo, pc_hi, search,
-        skip_gemeente=True, postcode_col=postcode_col,
+        skip_gemeente=True, postcode_col=postcode_col, soort_col=soort_col,
     )
     sub = base[base['gemeente'].astype(str).str.strip().astype(bool)].copy()
     sub = sub.dropna(subset=['lat', 'lon'])
@@ -515,6 +517,7 @@ def render_schools(db, map_height: int):
             'postcode_vestiging': s.get('postcode_vestiging', '') or '',
             'provincie': s.get('provincie', ''),
             'soort': s.get('soort', ''),
+            'soort_norm': s.get('soort_norm', '') or s.get('soort', ''),
             'status': s.get('status', ''),
             'website': s.get('website', ''),
             'telefoon': s.get('telefoon', ''),
@@ -581,9 +584,18 @@ def render_schools(db, map_height: int):
             f' Alleen uit gekozen {prov_label.lower()}(en).' if prov_sel else ''
         ),
     )
-    soort_opts = sorted(df['soort'].dropna().unique().tolist())
+    if land_code == 'NL':
+        soort_col = 'soort_norm'
+        soort_label = 'Onderwijstype'
+        soort_opts = [x for x in (
+            'Basisonderwijs', 'VO', 'MBO', 'HBO', 'WO', 'Speciaal onderwijs', 'Overig',
+        ) if x in set(df['soort_norm'].dropna().unique())]
+    else:
+        soort_col = 'soort'
+        soort_label = 'Soort'
+        soort_opts = sorted(df['soort'].dropna().unique().tolist())
     soort_sel = sb.multiselect(
-        'Soort', options=soort_opts, default=[], key=f'school_filter_soort_{land_code}', help=_ms_help,
+        soort_label, options=soort_opts, default=[], key=f'school_filter_soort_{land_code}', help=_ms_help,
     )
     status_opts = sorted(df['status'].dropna().unique().tolist())
     status_sel = sb.multiselect(
@@ -635,7 +647,7 @@ def render_schools(db, map_height: int):
 
     filtered = _filter_schools_df(
         df, prov_sel, gem_sel, soort_sel, status_sel, pc_lo, pc_hi, search,
-        postcode_col=postcode_col,
+        postcode_col=postcode_col, soort_col=soort_col,
     )
 
     filtered_reset = filtered.reset_index(drop=True)
@@ -655,10 +667,16 @@ def render_schools(db, map_height: int):
     with d2:
         st.download_button('Download alle scholen (CSV)', export_csv, 'scholen_alle.csv', 'text/csv')
 
-    display_cols = [
-        'administratienummer', 'provincie', 'gemeente', 'postcode_vestiging', 'plaats', 'naam', 'soort', 'status',
-        'website', 'lat', 'lon',
-    ]
+    if land_code == 'NL':
+        display_cols = [
+            'administratienummer', 'provincie', 'gemeente', 'postcode_vestiging', 'plaats', 'naam',
+            'soort_norm', 'status', 'website', 'lat', 'lon',
+        ]
+    else:
+        display_cols = [
+            'administratienummer', 'provincie', 'gemeente', 'postcode_vestiging', 'plaats', 'naam', 'soort', 'status',
+            'website', 'lat', 'lon',
+        ]
     table_df = filtered_reset[display_cols] if len(filtered_reset) else pd.DataFrame(columns=display_cols)
 
     pre = st.session_state.get('selected_school_id')
@@ -727,7 +745,7 @@ def render_schools(db, map_height: int):
             place_lbl = 'Stadt' if land_code == 'DE' else 'Gemeente'
             gm = _gemeenten_map_markers(
                 df, prov_sel, gem_sel, soort_sel, status_sel, pc_lo, pc_hi, search,
-                postcode_col=postcode_col, place_label=place_lbl,
+                postcode_col=postcode_col, place_label=place_lbl, soort_col=soort_col,
             )
             if not gm.empty:
                 valid_gemeenten, _ = _prepare_map_coords_df(
@@ -966,7 +984,11 @@ def render_schools(db, map_height: int):
         else:
             st.markdown(f"### {selected.get('naam', '')}")
             st.write('**Administratienummer:**', selected.get('administratienummer', ''))
-            st.write('**Soort:**', selected.get('soort', ''))
+            if land_code == 'NL':
+                st.write('**Onderwijstype:**', selected.get('soort_norm', ''))
+                st.write('**DUO-soort:**', selected.get('soort', ''))
+            else:
+                st.write('**Soort:**', selected.get('soort', ''))
             st.write('**Status:**', selected.get('status', ''))
             st.write('**Plaats:**', selected.get('plaats', ''))
             st.write('**Gemeente:**', selected.get('gemeente', ''))
