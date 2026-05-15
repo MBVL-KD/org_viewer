@@ -194,8 +194,11 @@ def _apply_school_map_pick(selection, filtered_reset_df, clubs_coll):
         return
     gn = picked.get('gemeentenaam')
     if gn and str(gn).strip():
-        st.session_state['school_filter_gem'] = [str(gn).strip()]
+        # We mogen de key van een bestaand widget niet direct aanpassen ná
+        # aanmaak; zet een pending waarde en forceer een rerun.
+        st.session_state['_pending_school_filter_gem'] = [str(gn).strip()]
         st.session_state.pop('school_map_club_popup', None)
+        st.rerun()
         return
     cid = picked.get('club_id')
     if cid:
@@ -367,6 +370,10 @@ def render_schools(db, map_height: int):
     _ms_help = 'Geen selectie = alles tonen. Meerdere waarden: elk van die waarden (OR binnen dit veld).'
     prov_opts = sorted(df['provincie'].dropna().unique().tolist())
     prov_sel = sb.multiselect('Provincie', options=prov_opts, default=[], key='school_filter_prov', help=_ms_help)
+    # Eventuele pending-gemeenteselectie toepassen vóórdat de widget wordt aangemaakt.
+    pending_gem = st.session_state.pop('_pending_school_filter_gem', None)
+    if pending_gem is not None:
+        st.session_state['school_filter_gem'] = pending_gem
     if prov_sel:
         gem_pool = df[df['provincie'].isin(prov_sel)]
     else:
