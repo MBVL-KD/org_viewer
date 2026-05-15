@@ -206,9 +206,6 @@ def render_clubs(map_height):
         st.warning('Geen clubdata gevonden. Draai eerst scraper met: python3 scraper.py')
         st.stop()
 
-    export_json_bytes = _build_export_json_bytes(clubs)
-    export_csv_bytes = _build_export_csv_bytes(clubs)
-
     rows = []
     for club in clubs:
         club = enrich_club_bond_fields(dict(club))
@@ -239,6 +236,7 @@ def render_clubs(map_height):
             'imported_at': club.get('imported_at', ''),
             'updated_at': club.get('updated_at', ''),
             'details': details,
+            'raw': club,
         })
 
     df = pd.DataFrame(rows)
@@ -306,6 +304,14 @@ def render_clubs(map_height):
 
     filtered_reset = filtered.reset_index(drop=True)
 
+    sel_club_docs = filtered_reset['raw'].tolist() if len(filtered_reset) else []
+    export_json_bytes = _build_export_json_bytes(sel_club_docs)
+    export_csv_bytes = _build_export_csv_bytes(sel_club_docs)
+    n_club_exp = len(sel_club_docs)
+    club_export_stub = (
+        'damclubs_selectie_leeg' if n_club_exp == 0 else f'damclubs_selectie_{n_club_exp}'
+    )
+
     if 'selected_club_id' not in st.session_state:
         st.session_state.selected_club_id = None
 
@@ -319,19 +325,19 @@ def render_clubs(map_height):
     dl_json, dl_csv, _ = st.columns([1, 1, 4])
     with dl_json:
         st.download_button(
-            label='Download alle clubs (JSON)',
+            label=f'Download selectie JSON ({n_club_exp})',
             data=export_json_bytes,
-            file_name='damclubs_alle.json',
+            file_name=f'{club_export_stub}.json',
             mime='application/json',
-            help='Volledige export van alle clubdocumenten uit MongoDB (niet alleen de filter).',
+            help='Alleen clubs die nu aan de filters voldoen (bond, zoekveld, website, e-mail).',
         )
     with dl_csv:
         st.download_button(
-            label='Download alle clubs (CSV)',
+            label=f'Download selectie CSV ({n_club_exp})',
             data=export_csv_bytes,
-            file_name='damclubs_alle.csv',
+            file_name=f'{club_export_stub}.csv',
             mime='text/csv',
-            help='Volledige export van alle clubs als platte CSV (geneste velden als JSON-tekst).',
+            help='Zelfde selectie als tabel en kaart; platte CSV (geneste velden als JSON-tekst).',
         )
 
     onder_col = sub_bond_filter_title(bond_land_sel)

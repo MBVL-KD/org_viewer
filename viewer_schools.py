@@ -16,6 +16,7 @@ from bond_land import (
     national_bond_label,
 )
 from de_bundesland import bundesland_filter_label
+from de_school_soort import all_soort_norm_categories, normalize_de_school_soort
 from nl_provincie import canonical_nl_provincie_club, normalize_nl_provincienaam
 from scraper import is_valid_be_coords, is_valid_de_coords, is_valid_nl_coords
 
@@ -220,6 +221,20 @@ def _provincie_filter_label(value: str, land_code: str) -> str:
 
 def _serialize_mongo_doc(doc):
     return json.loads(json.dumps(doc, default=str))
+
+
+def _export_schools_json_csv_bytes(docs: List[dict]) -> tuple[bytes, bytes]:
+    """JSON + CSV (plat) voor downloads; docs = Mongo schooldicts."""
+    serialized = [_serialize_mongo_doc(d) for d in docs]
+    export_json = json.dumps(serialized, ensure_ascii=False, indent=2).encode('utf-8')
+    df_exp = pd.json_normalize(serialized, sep='_')
+    for col in df_exp.columns:
+        if df_exp[col].dtype == object:
+            df_exp[col] = df_exp[col].apply(
+                lambda x: json.dumps(x, ensure_ascii=False) if isinstance(x, (dict, list)) else x
+            )
+    export_csv = df_exp.to_csv(index=False).encode('utf-8-sig')
+    return export_json, export_csv
 
 
 def _dataframe_selection_rows(df_event):
@@ -580,19 +595,23 @@ def render_schools(db, map_height: int):
             )
         return
 
-    export_json = json.dumps([_serialize_mongo_doc(s) for s in schools], ensure_ascii=False, indent=2).encode('utf-8')
-    df_exp = pd.json_normalize([_serialize_mongo_doc(s) for s in schools], sep='_')
-    for col in df_exp.columns:
-        if df_exp[col].dtype == object:
-            df_exp[col] = df_exp[col].apply(
-                lambda x: json.dumps(x, ensure_ascii=False) if isinstance(x, (dict, list)) else x
-            )
-    export_csv = df_exp.to_csv(index=False).encode('utf-8-sig')
-
     rows = []
     for s in schools:
         em = s.get('email') or ''
         em_ok = bool(str(em).strip())
+        sn = (s.get('soort_norm') or '').strip()
+        sd = (s.get('soort_norm_detail') or '').strip()
+        if land_code == 'DE':
+            if not sn:
+                sn, sd = normalize_de_school_soort(s.get('soort') or '')
+        else:
+            sn = sn or (s.get('soort') or '')
+        ts_parts = [
+            s.get('naam'), s.get('plaats'), s.get('gemeente'), s.get('provincie'),
+            s.get('postcode_vestiging'),
+            s.get('soort'), sn, sd, s.get('website'), em, s.get('telefoon'),
+            s.get('administratienummer'),
+        ]
         rows.append({
             '_id': s['_id'],
             'has_email': em_ok,
@@ -603,7 +622,8 @@ def render_schools(db, map_height: int):
             'postcode_vestiging': s.get('postcode_vestiging', '') or '',
             'provincie': s.get('provincie', ''),
             'soort': s.get('soort', ''),
-            'soort_norm': s.get('soort_norm', '') or s.get('soort', ''),
+            'soort_norm': sn,
+            'soort_norm_detail': sd if land_code == 'DE' else (s.get('soort_norm_detail') or ''),
             'status': s.get('status', ''),
             'website': s.get('website', ''),
             'telefoon': s.get('telefoon', ''),
@@ -612,14 +632,7 @@ def render_schools(db, map_height: int):
             'lon': s.get('lon'),
             'bron_bestand': s.get('bron_bestand', ''),
             'imported_at': s.get('imported_at', ''),
-            'text_search': ' '.join(
-                str(x) for x in [
-                    s.get('naam'), s.get('plaats'), s.get('gemeente'), s.get('provincie'),
-                    s.get('postcode_vestiging'),
-                    s.get('soort'), s.get('website'), em, s.get('telefoon'),
-                    s.get('administratienummer'),
-                ] if x
-            ),
+            'text_search': ' '.join(str(x) for x in ts_parts if x),
             'raw': s,
         })
 
@@ -681,6 +694,12 @@ def render_schools(db, map_height: int):
         soort_opts = [x for x in (
             'Basisonderwijs', 'VO', 'MBO', 'HBO', 'WO', 'Speciaal onderwijs', 'Overig',
         ) if x in set(df['soort_norm'].dropna().unique())]
+    elif land_code == 'DE':
+        soort_col = 'soort_norm'
+        soort_label = 'Schultyp (genormaliseerd)'
+        present = set(df['soort_norm'].dropna().astype(str).str.strip().unique()) - {''}
+        soort_opts = [x for x in all_soort_norm_categories() if x in present]
+        soort_opts.extend(sorted(x for x in present if x not in soort_opts))
     else:
         soort_col = 'soort'
         soort_label = 'Soort'
@@ -744,6 +763,11 @@ def render_schools(db, map_height: int):
 
     filtered_reset = filtered.reset_index(drop=True)
 
+    export_docs = filtered_reset['raw'].tolist() if len(filtered_reset) else []
+    export_json, export_csv = _export_schools_json_csv_bytes(export_docs)
+    n_exp = len(export_docs)
+    export_stub = 'scholen_selectie_leeg' if n_exp == 0 else f'scholen_selectie_{n_exp}'
+
     if 'selected_school_id' not in st.session_state:
         st.session_state.selected_school_id = None
     if st.session_state.selected_school_id is not None:
@@ -755,15 +779,32 @@ def render_schools(db, map_height: int):
 
     d1, d2, _ = st.columns([1, 1, 4])
     with d1:
-        st.download_button('Download alle scholen (JSON)', export_json, 'scholen_alle.json', 'application/json')
+        st.download_button(
+            f'Download selectie JSON ({n_exp})',
+            export_json,
+            f'{export_stub}.json',
+            'application/json',
+            help='Export uit database: alleen scholen die nu aan de filters voldoen (incl. e-mailfilter en zoekveld).',
+        )
     with d2:
-        st.download_button('Download alle scholen (CSV)', export_csv, 'scholen_alle.csv', 'text/csv')
+        st.download_button(
+            f'Download selectie CSV ({n_exp})',
+            export_csv,
+            f'{export_stub}.csv',
+            'text/csv',
+            help='Zelfde selectie als de tabel en kaart; platte CSV (geneste velden als JSON-tekst).',
+        )
 
-    if land_code in ('NL', 'BE'):
+    if land_code in ('NL', 'BE', 'DE'):
         display_cols = [
             'administratienummer', 'provincie', 'gemeente', 'postcode_vestiging', 'plaats', 'naam',
             'soort_norm', 'status', 'website', 'lat', 'lon',
         ]
+        if land_code == 'DE':
+            display_cols = [
+                'administratienummer', 'provincie', 'gemeente', 'postcode_vestiging', 'plaats', 'naam',
+                'soort_norm', 'soort_norm_detail', 'soort', 'status', 'website', 'lat', 'lon',
+            ]
     else:
         display_cols = [
             'administratienummer', 'provincie', 'gemeente', 'postcode_vestiging', 'plaats', 'naam', 'soort', 'status',
@@ -1081,6 +1122,14 @@ def render_schools(db, map_height: int):
             if land_code == 'NL':
                 st.write('**Onderwijstype:**', selected.get('soort_norm', ''))
                 st.write('**DUO-soort:**', selected.get('soort', ''))
+            elif land_code == 'DE':
+                st.write('**Schultyp (genormaliseerd):**', selected.get('soort_norm', ''))
+                det = (selected.get('soort_norm_detail') or '').strip()
+                if not det and selected.get('soort'):
+                    _, det = normalize_de_school_soort(selected.get('soort') or '')
+                if det:
+                    st.write('**Subtype Weiterführend:**', det)
+                st.write('**JedeSchule school_type:**', selected.get('soort', ''))
             else:
                 st.write('**Soort:**', selected.get('soort', ''))
             st.write('**Status:**', selected.get('status', ''))
