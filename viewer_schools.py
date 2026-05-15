@@ -187,11 +187,29 @@ def _gemeenten_map_markers(
     return pd.DataFrame(rows)
 
 
+def _map_pick_fingerprint(picked: dict) -> str:
+    """Unieke sleutel voor Pydeck-selectie (voorkomt herhaalde verwerking na checkbox/rerun)."""
+    parts = []
+    for key in ('gemeentenaam', 'club_id', 'school_id', 'administratienummer'):
+        val = picked.get(key)
+        if val is not None and str(val).strip():
+            parts.append(f'{key}={val}')
+    naam = picked.get('naam')
+    if naam and not parts:
+        parts.append(f'naam={naam}')
+    return '|'.join(parts)
+
+
 def _apply_school_map_pick(selection, filtered_reset_df, clubs_coll):
     """Verwerk klik op scholenkaart: gemeente → filter, damclub → popup, school → selectie."""
     picked = _pydeck_first_picked_object(selection)
     if not picked or not isinstance(picked, dict):
         return
+    fp = _map_pick_fingerprint(picked)
+    if fp and fp == st.session_state.get('_school_map_pick_fp'):
+        return
+    if fp:
+        st.session_state['_school_map_pick_fp'] = fp
     gn = picked.get('gemeentenaam')
     if gn and str(gn).strip():
         gn = str(gn).strip()
@@ -277,8 +295,15 @@ def _clubs_overlay_for_school_filters(
             for p in filtered_schools['plaats'].dropna().unique()
             if str(p).strip()
         }
+        for g in filtered_schools['gemeente'].dropna().unique():
+            s = str(g).strip()
+            if s:
+                allowed_plaatsen.add(s)
         if not allowed_plaatsen:
             return pd.DataFrame()
+        allowed_plaatsen_lc = {p.lower() for p in allowed_plaatsen}
+    else:
+        allowed_plaatsen_lc = None
 
     prov_wanted: Optional[set] = None
     if prov_sel:
@@ -299,7 +324,7 @@ def _clubs_overlay_for_school_filters(
         club_prov = canonical_nl_provincie_club(c.get('provincie'))
         if prov_wanted is not None and club_prov not in prov_wanted:
             continue
-        if allowed_plaatsen is not None and plaats not in allowed_plaatsen:
+        if allowed_plaatsen is not None and plaats.lower() not in allowed_plaatsen_lc:
             continue
         det = c.get('details') if isinstance(c.get('details'), dict) else {}
         website = str(det.get('website') or '').strip()
@@ -408,6 +433,24 @@ def render_schools(db, map_height: int):
     with pc_col2:
         pc_max_in = st.text_input('Tot', placeholder='bv. 1099', key='school_pc_max')
     sb.caption('Leeg laten = geen onder-/bovengrens. Ongeldige invoer wordt genegeerd.')
+    sb.markdown('**Kaartlagen**')
+    show_gemeenten_on_map = sb.checkbox(
+        'Gemeenten op kaart',
+        value=False,
+        key='school_map_show_gemeenten',
+        help=(
+            'Groene punten: klik voegt gemeente toe aan het filter. '
+            'Centra uit schoolcoördinaten (geen officiële grenzen).'
+        ),
+    )
+    show_clubs_on_map = sb.checkbox(
+        'Damclubs op kaart',
+        value=False,
+        key='school_map_show_clubs',
+        help='Oranje punten; zelfde provincie als schoolfilter. Klik voor korte clubinfo.',
+    )
+    if not show_clubs_on_map:
+        st.session_state.pop('school_map_club_popup', None)
 
     search = st.text_input('Zoek school, plaats, admin.nr., e-mail …')
 
@@ -476,29 +519,9 @@ def render_schools(db, map_height: int):
 
     with col_map:
         st.subheader('Kaart')
-        show_clubs_on_map = st.checkbox(
-            'Damclubs op deze kaart tonen',
-            value=False,
-            key='school_map_show_clubs',
-            help=(
-                'Zelfde provincie als je schoolfilter. Bij filter op gemeente, postcodebereik of zoekterm: '
-                'club moet in dezelfde plaats zitten als een school in de huidige selectie. '
-                'Soort/status van scholen gelden niet voor clubs. Klik op een oranje punt voor een kort '
-                'gegevensvenster; lichtblauw = school (donkerblauw = geselecteerde school).'
-            ),
-        )
-        if not show_clubs_on_map:
-            st.session_state.pop('school_map_club_popup', None)
-
-        show_gemeenten_on_map = st.checkbox(
-            'Gemeenten op kaart (klik = gemeentefilter)',
-            value=False,
-            key='school_map_show_gemeenten',
-            help=(
-                'Groene labels = gemeenten met scholen in de huidige filters (provincie, soort, status, '
-                'postcode, zoekterm). Elke klik voegt een gemeente toe aan het filter (meerdere mogelijk). '
-                'Geen volledige gemeentegrenzen (te zwaar voor de browser); centra uit schoolcoördinaten.'
-            ),
+        st.caption(
+            'Kaartlagen (gemeenten / damclubs) staan in de **zijbalk**. '
+            'Lichtblauw = school, groen = gemeente, oranje = damclub.'
         )
 
         nl_lat_lo, nl_lat_hi = 50.5, 53.7
@@ -702,7 +725,7 @@ def render_schools(db, map_height: int):
                         'TextLayer',
                         data=valid_gemeenten,
                         id='school_map_gemeente_labels',
-                        pickable=True,
+                        pickable=False,
                         get_position='[longitude, latitude]',
                         get_text='gemeentenaam',
                         get_size=13,
