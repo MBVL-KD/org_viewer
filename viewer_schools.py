@@ -187,8 +187,29 @@ def _mongo_school_land_query(land_code: str) -> dict:
     if land_code == 'DE':
         return {'land': 'DE'}
     if land_code == 'BE':
-        return {'land': 'BE'}
+        return {'$or': [{'land': 'BE'}, {'gemeenschap': 'VL'}]}
     return {'$or': [{'land': 'NL'}, {'land': {'$exists': False}}, {'land': None}, {'land': ''}]}
+
+
+def _school_land_counts(schools_coll) -> dict:
+    return {
+        code: schools_coll.count_documents(_mongo_school_land_query(code))
+        for code, _ in SCHOOL_LAND_CHOICES
+    }
+
+
+def _school_land_selectbox(schools_coll, *, container, key: str = 'school_filter_land_v2') -> str:
+    """Landkeuze NL / DE / BE — altijd alle drie tonen met aantallen."""
+    counts = _school_land_counts(schools_coll)
+    codes = [code for code, _ in SCHOOL_LAND_CHOICES]
+    labels = {code: f'{name} ({counts[code]})' for code, name in SCHOOL_LAND_CHOICES}
+    return container.selectbox(
+        'Land',
+        options=codes,
+        format_func=lambda c: labels[c],
+        key=key,
+        help='Kies het land van de schooldata.',
+    )
 
 
 def _provincie_filter_label(value: str, land_code: str) -> str:
