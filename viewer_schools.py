@@ -493,19 +493,22 @@ def render_schools(db, map_height: int):
         if hits:
             sel_def = {'selection': {'rows': [int(hits[0])]}}
 
-    ev = st.dataframe(
-        table_df,
-        height=SCHOOL_TABLE_HEIGHT,
-        use_container_width=True,
-        hide_index=True,
-        on_select='rerun',
-        selection_mode='single-row',
-        key='school_table',
-        selection_default=sel_def,
-    )
-    st.caption(
-        f'Maximaal {LIST_VISIBLE_ROWS} rijen zichtbaar; scroll voor meer ({len(filtered_reset)} in selectie).'
-    )
+    col_table, col_map = st.columns(2, gap='large')
+
+    with col_table:
+        ev = st.dataframe(
+            table_df,
+            height=map_height,
+            use_container_width=True,
+            hide_index=True,
+            on_select='rerun',
+            selection_mode='single-row',
+            key='school_table',
+            selection_default=sel_def,
+        )
+        st.caption(
+            f'Scroll in de tabel voor meer rijen ({len(filtered_reset)} in selectie).'
+        )
 
     sr = _dataframe_selection_rows(ev)
     if sr:
@@ -514,8 +517,6 @@ def render_schools(db, map_height: int):
             st.session_state.selected_school_id = filtered_reset.iloc[i]['_id']
 
     sid_map = st.session_state.selected_school_id
-
-    col_details, col_map = st.columns(2, gap='large')
 
     with col_map:
         st.subheader('Kaart')
@@ -791,57 +792,56 @@ def render_schools(db, map_height: int):
     sid = st.session_state.selected_school_id
     selected = next((r['raw'] for r in rows if r['_id'] == sid), None) if sid else None
 
-    with col_details:
-        st.subheader('Schoolgegevens')
-        with st.expander('Details & bewerken', expanded=selected is not None):
-            if not selected:
-                st.info('Kies een school in de tabel of op de kaart.')
-            else:
-                st.markdown(f"### {selected.get('naam', '')}")
-                st.write('**Administratienummer:**', selected.get('administratienummer', ''))
-                st.write('**Soort:**', selected.get('soort', ''))
-                st.write('**Status:**', selected.get('status', ''))
-                st.write('**Plaats:**', selected.get('plaats', ''))
-                st.write('**Gemeente:**', selected.get('gemeente', ''))
-                st.write('**Provincie:**', selected.get('provincie', ''))
-                st.write('**Adres vestiging:**', ' '.join(filter(None, [
-                    selected.get('straat_vestiging'),
-                    selected.get('huisnr_vestiging'),
-                    selected.get('huisnr_toev_vestiging'),
-                ])).strip())
-                st.write('**Postcode:**', selected.get('postcode_vestiging', ''))
-                st.write('**Telefoon:**', selected.get('telefoon', ''))
-                st.write('**E-mail:**', selected.get('email', ''))
-                st.write('**Website:**', selected.get('website', ''))
-                st.write('**Bronbestand:**', selected.get('bron_bestand', ''))
-                corr = selected.get('correspondentie') or {}
-                if any(corr.values()):
-                    st.subheader('Correspondentie-adres')
-                    st.json(corr)
-                with st.expander('Volledige JSON'):
-                    st.json(_serialize_mongo_doc(selected))
+    st.subheader('Schoolgegevens')
+    with st.expander('Details & bewerken', expanded=selected is not None):
+        if not selected:
+            st.info('Kies een school in de tabel of op de kaart.')
+        else:
+            st.markdown(f"### {selected.get('naam', '')}")
+            st.write('**Administratienummer:**', selected.get('administratienummer', ''))
+            st.write('**Soort:**', selected.get('soort', ''))
+            st.write('**Status:**', selected.get('status', ''))
+            st.write('**Plaats:**', selected.get('plaats', ''))
+            st.write('**Gemeente:**', selected.get('gemeente', ''))
+            st.write('**Provincie:**', selected.get('provincie', ''))
+            st.write('**Adres vestiging:**', ' '.join(filter(None, [
+                selected.get('straat_vestiging'),
+                selected.get('huisnr_vestiging'),
+                selected.get('huisnr_toev_vestiging'),
+            ])).strip())
+            st.write('**Postcode:**', selected.get('postcode_vestiging', ''))
+            st.write('**Telefoon:**', selected.get('telefoon', ''))
+            st.write('**E-mail:**', selected.get('email', ''))
+            st.write('**Website:**', selected.get('website', ''))
+            st.write('**Bronbestand:**', selected.get('bron_bestand', ''))
+            corr = selected.get('correspondentie') or {}
+            if any(corr.values()):
+                st.subheader('Correspondentie-adres')
+                st.json(corr)
+            with st.expander('Volledige JSON'):
+                st.json(_serialize_mongo_doc(selected))
 
-                st.subheader('Handmatig bijwerken')
-                with st.form(f"school_edit_{selected['_id']}"):
-                    website = st.text_input('Website', selected.get('website', '') or '')
-                    email = st.text_input('E-mail', selected.get('email', '') or '')
-                    lat = st.text_input('Latitude', str(selected.get('lat') or ''))
-                    lon = st.text_input('Longitude', str(selected.get('lon') or ''))
-                    sub = st.form_submit_button('Opslaan')
-                    if sub:
-                        try:
-                            upd = {
-                                'website': website.strip(),
-                                'email': email.strip(),
-                                'lat': float(lat) if lat.strip() else None,
-                                'lon': float(lon) if lon.strip() else None,
-                                'updated_at_manual': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
-                            }
-                            schools_coll.update_one({'_id': selected['_id']}, {'$set': upd})
-                            st.success('Opgeslagen.')
-                            st.rerun()
-                        except Exception as exc:
-                            st.error(f'Opslaan mislukt: {exc}')
+            st.subheader('Handmatig bijwerken')
+            with st.form(f"school_edit_{selected['_id']}"):
+                website = st.text_input('Website', selected.get('website', '') or '')
+                email = st.text_input('E-mail', selected.get('email', '') or '')
+                lat = st.text_input('Latitude', str(selected.get('lat') or ''))
+                lon = st.text_input('Longitude', str(selected.get('lon') or ''))
+                sub = st.form_submit_button('Opslaan')
+                if sub:
+                    try:
+                        upd = {
+                            'website': website.strip(),
+                            'email': email.strip(),
+                            'lat': float(lat) if lat.strip() else None,
+                            'lon': float(lon) if lon.strip() else None,
+                            'updated_at_manual': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+                        }
+                        schools_coll.update_one({'_id': selected['_id']}, {'$set': upd})
+                        st.success('Opgeslagen.')
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f'Opslaan mislukt: {exc}')
 
     if st.session_state.get('school_map_club_popup'):
         _school_map_club_popup_dialog()

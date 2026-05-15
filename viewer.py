@@ -278,20 +278,22 @@ def render_clubs(map_height):
         if hit_idx:
             selection_default = {'selection': {'rows': [int(hit_idx[0])]}}
 
-    df_event = st.dataframe(
-        table_df,
-        height=CLUB_TABLE_HEIGHT,
-        use_container_width=True,
-        hide_index=True,
-        on_select='rerun',
-        selection_mode='single-row',
-        key='club_table',
-        selection_default=selection_default,
-    )
-    st.caption(
-        f'Maximaal {LIST_VISIBLE_ROWS} rijen zichtbaar; scroll in de tabel voor de overige clubs '
-        f'({len(filtered_reset)} in deze selectie).'
-    )
+    col_table, col_map = st.columns(2, gap='large')
+
+    with col_table:
+        df_event = st.dataframe(
+            table_df,
+            height=map_height,
+            use_container_width=True,
+            hide_index=True,
+            on_select='rerun',
+            selection_mode='single-row',
+            key='club_table',
+            selection_default=selection_default,
+        )
+        st.caption(
+            f'Scroll in de tabel voor meer rijen ({len(filtered_reset)} in selectie).'
+        )
 
     sel_rows = _dataframe_selection_rows(df_event)
     if sel_rows:
@@ -300,8 +302,6 @@ def render_clubs(map_height):
             st.session_state.selected_club_id = filtered_reset.iloc[idx]['_id']
 
     selected_id_for_map = st.session_state.selected_club_id
-
-    col_details, col_map = st.columns(2, gap='large')
 
     with col_map:
         st.subheader('Kaart')
@@ -416,98 +416,97 @@ def render_clubs(map_height):
     selected_id = st.session_state.selected_club_id
     selected = next((item for item in rows if item['_id'] == selected_id), None) if selected_id is not None else None
 
-    with col_details:
-        st.subheader('Clubgegevens')
-        with st.expander(
-            'Details, contact & bewerken',
-            expanded=selected is not None,
-        ):
-            if not selected:
-                st.info('Klik op een rij in de tabel of op een punt op de kaart.')
-            else:
-                st.markdown(f"### {selected['naam']}")
-                st.write('**Provincie:**', selected['provincie'])
-                st.write('**Plaats:**', selected['plaats'])
-                st.write('**Clublokaal:**', selected['clublokaal'])
-                st.write('**Secretariaat:**', selected['secretariaat'])
-                st.write('**Website:**', selected['website'])
-                if selected['club_url']:
-                    st.write('**KNDB detailpagina:**', selected['club_url'])
-                st.write('**Bond URL:**', selected['bond_url'])
-                if selected['emails']:
-                    show_emails = _clean_emails(selected['emails'])
-                    if show_emails:
-                        st.write('**E-mail(s):**', ', '.join(show_emails))
-                    else:
-                        st.caption(
-                            'E-mail(s) in de database zijn nog verborgen (bijv. “[email protected]”). '
-                            'Draai `python3 scraper.py` opnieuw om Cloudflare-e-mails te decoderen.'
-                        )
-                if selected['telefoons']:
-                    st.write('**Telefoon(s):**', ', '.join(selected['telefoons']))
-                if selected['logo']:
-                    st.image(selected['logo'], width=180)
+    st.subheader('Clubgegevens')
+    with st.expander(
+        'Details, contact & bewerken',
+        expanded=selected is not None,
+    ):
+        if not selected:
+            st.info('Klik op een rij in de tabel of op een punt op de kaart.')
+        else:
+            st.markdown(f"### {selected['naam']}")
+            st.write('**Provincie:**', selected['provincie'])
+            st.write('**Plaats:**', selected['plaats'])
+            st.write('**Clublokaal:**', selected['clublokaal'])
+            st.write('**Secretariaat:**', selected['secretariaat'])
+            st.write('**Website:**', selected['website'])
+            if selected['club_url']:
+                st.write('**KNDB detailpagina:**', selected['club_url'])
+            st.write('**Bond URL:**', selected['bond_url'])
+            if selected['emails']:
+                show_emails = _clean_emails(selected['emails'])
+                if show_emails:
+                    st.write('**E-mail(s):**', ', '.join(show_emails))
+                else:
+                    st.caption(
+                        'E-mail(s) in de database zijn nog verborgen (bijv. “[email protected]”). '
+                        'Draai `python3 scraper.py` opnieuw om Cloudflare-e-mails te decoderen.'
+                    )
+            if selected['telefoons']:
+                st.write('**Telefoon(s):**', ', '.join(selected['telefoons']))
+            if selected['logo']:
+                st.image(selected['logo'], width=180)
 
-                locaties = selected['details'].get('locaties', [])
-                if locaties:
-                    st.subheader('Clublocaties')
-                    for locatie in locaties:
-                        st.write('•', locatie.get('naam', ''))
-                        st.write('  - Adres:', locatie.get('adres', ''))
-                        if locatie.get('postcode'):
-                            st.write('  - Postcode:', locatie.get('postcode'))
-                        if locatie.get('woonplaats'):
-                            st.write('  - Woonplaats:', locatie.get('woonplaats'))
-                        if locatie.get('telefoon'):
-                            st.write('  - Telefoon:', locatie.get('telefoon'))
+            locaties = selected['details'].get('locaties', [])
+            if locaties:
+                st.subheader('Clublocaties')
+                for locatie in locaties:
+                    st.write('•', locatie.get('naam', ''))
+                    st.write('  - Adres:', locatie.get('adres', ''))
+                    if locatie.get('postcode'):
+                        st.write('  - Postcode:', locatie.get('postcode'))
+                    if locatie.get('woonplaats'):
+                        st.write('  - Woonplaats:', locatie.get('woonplaats'))
+                    if locatie.get('telefoon'):
+                        st.write('  - Telefoon:', locatie.get('telefoon'))
 
-                contactpersonen = selected['details'].get('contactpersonen', [])
-                if contactpersonen:
-                    st.subheader('Contactpersonen')
-                    for contact in contactpersonen:
-                        st.write('•', contact.get('functie', ''))
-                        st.write('  - Naam:', contact.get('naam', ''))
-                        if contact.get('adres'):
-                            st.write('  - Adres:', contact.get('adres'))
-                        if contact.get('woonplaats'):
-                            st.write('  - Woonplaats:', contact.get('woonplaats'))
-                        if contact.get('telefoon'):
-                            st.write('  - Telefoon:', contact.get('telefoon'))
-                        if contact.get('email') and not _is_obfuscated_email(contact.get('email')):
-                            st.write('  - E-mail:', contact.get('email'))
+            contactpersonen = selected['details'].get('contactpersonen', [])
+            if contactpersonen:
+                st.subheader('Contactpersonen')
+                for contact in contactpersonen:
+                    st.write('•', contact.get('functie', ''))
+                    st.write('  - Naam:', contact.get('naam', ''))
+                    if contact.get('adres'):
+                        st.write('  - Adres:', contact.get('adres'))
+                    if contact.get('woonplaats'):
+                        st.write('  - Woonplaats:', contact.get('woonplaats'))
+                    if contact.get('telefoon'):
+                        st.write('  - Telefoon:', contact.get('telefoon'))
+                    if contact.get('email') and not _is_obfuscated_email(contact.get('email')):
+                        st.write('  - E-mail:', contact.get('email'))
 
-                with st.expander('JSON (huidige club)'):
-                    st.json(json.loads(json.dumps(selected, default=str)))
+            with st.expander('JSON (huidige club)'):
+                st.json(json.loads(json.dumps(selected, default=str)))
 
-                st.subheader('Aanpassen / bijwerken')
-                with st.form(f"edit_form_{selected['_id']}"):
-                    naam = st.text_input('Naam', selected['naam'])
-                    plaats = st.text_input('Plaats', selected['plaats'])
-                    secretariaat = st.text_input('Secretariaat', selected['secretariaat'])
-                    clublokaal = st.text_input('Clublokaal', selected['clublokaal'])
-                    website = st.text_input('Website', selected['website'])
-                    lat = st.text_input('Latitude', str(selected.get('lat', '') or ''))
-                    lon = st.text_input('Longitude', str(selected.get('lon', '') or ''))
-                    details_json = st.text_area('Details JSON', json.dumps(selected['details'], ensure_ascii=False, indent=2), height=240)
-                    submitted = st.form_submit_button('Opslaan')
-                    if submitted:
-                        try:
-                            details = json.loads(details_json)
-                            details['website'] = (website or '').strip()
-                            update_data = {
-                                'naam': naam,
-                                'plaats': plaats,
-                                'secretariaat': secretariaat,
-                                'clublokaal': clublokaal,
-                                'details': details,
-                                'lat': float(lat) if lat.strip() else None,
-                                'lon': float(lon) if lon.strip() else None,
-                            }
-                            collection.update_one({'_id': selected['_id']}, {'$set': update_data})
-                            st.success('Clubgegevens bijgewerkt.')
-                            st.rerun()
-                        except Exception as exc:
-                            st.error(f'Kon niet opslaan: {exc}')
+            st.subheader('Aanpassen / bijwerken')
+            with st.form(f"edit_form_{selected['_id']}"):
+                naam = st.text_input('Naam', selected['naam'])
+                plaats = st.text_input('Plaats', selected['plaats'])
+                secretariaat = st.text_input('Secretariaat', selected['secretariaat'])
+                clublokaal = st.text_input('Clublokaal', selected['clublokaal'])
+                website = st.text_input('Website', selected['website'])
+                lat = st.text_input('Latitude', str(selected.get('lat', '') or ''))
+                lon = st.text_input('Longitude', str(selected.get('lon', '') or ''))
+                details_json = st.text_area('Details JSON', json.dumps(selected['details'], ensure_ascii=False, indent=2), height=240)
+                submitted = st.form_submit_button('Opslaan')
+                if submitted:
+                    try:
+                        details = json.loads(details_json)
+                        details['website'] = (website or '').strip()
+                        update_data = {
+                            'naam': naam,
+                            'plaats': plaats,
+                            'secretariaat': secretariaat,
+                            'clublokaal': clublokaal,
+                            'details': details,
+                            'lat': float(lat) if lat.strip() else None,
+                            'lon': float(lon) if lon.strip() else None,
+                        }
+                        collection.update_one({'_id': selected['_id']}, {'$set': update_data})
+                        st.success('Clubgegevens bijgewerkt.')
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f'Kon niet opslaan: {exc}')
 
 st.set_page_config(page_title='Clubs & scholen', layout='wide')
 _ensure_viewer_password()
