@@ -109,10 +109,93 @@ def _club_doc_to_map_popup(doc: dict) -> dict:
     }
 
 
+def _filter_schools_df(
+    df: pd.DataFrame,
+    prov_sel: List[str],
+    gem_sel: List[str],
+    soort_sel: List[str],
+    status_sel: List[str],
+    pc_lo: Optional[int],
+    pc_hi: Optional[int],
+    search: str,
+    *,
+    skip_gemeente: bool = False,
+) -> pd.DataFrame:
+    """Pas schoolfilters toe; skip_gemeente=True voor gemeenten-markers op de kaart."""
+    out = df.copy()
+    if prov_sel:
+        out = out[out['provincie'].isin(prov_sel)]
+    if gem_sel and not skip_gemeente:
+        out = out[out['gemeente'].isin(gem_sel)]
+    if soort_sel:
+        out = out[out['soort'].isin(soort_sel)]
+    if status_sel:
+        out = out[out['status'].isin(status_sel)]
+    if pc_lo is not None or pc_hi is not None:
+        m_pc = out['postcode4'].notna()
+        if pc_lo is not None:
+            m_pc &= out['postcode4'] >= pc_lo
+        if pc_hi is not None:
+            m_pc &= out['postcode4'] <= pc_hi
+        out = out[m_pc]
+    if search:
+        out = out[out['text_search'].str.contains(search, case=False, na=False)]
+    return out
+
+
+def _gemeenten_map_markers(
+    df: pd.DataFrame,
+    prov_sel: List[str],
+    gem_sel: List[str],
+    soort_sel: List[str],
+    status_sel: List[str],
+    pc_lo: Optional[int],
+    pc_hi: Optional[int],
+    search: str,
+) -> pd.DataFrame:
+    """Klikbare gemeentecentra (uit scholen met coördinaten), rekening houdend met alle filters behalve gemeente."""
+    base = _filter_schools_df(
+        df, prov_sel, [], soort_sel, status_sel, pc_lo, pc_hi, search, skip_gemeente=True,
+    )
+    sub = base[base['gemeente'].astype(str).str.strip().astype(bool)].copy()
+    sub = sub.dropna(subset=['lat', 'lon'])
+    if sub.empty:
+        return pd.DataFrame()
+    rows = []
+    sub['_gem_key'] = sub['gemeente'].astype(str).str.strip()
+    for gem, grp in sub.groupby('_gem_key', sort=True):
+        if not gem:
+            continue
+        lat = pd.to_numeric(grp['lat'], errors='coerce').dropna()
+        lon = pd.to_numeric(grp['lon'], errors='coerce').dropna()
+        if lat.empty or lon.empty:
+            continue
+        n = len(grp)
+        prov_s = grp['provincie'].dropna()
+        prov = str(prov_s.iloc[0]) if len(prov_s) else ''
+        rows.append({
+            'gemeentenaam': gem,
+            'naam': gem,
+            'plaats': prov,
+            'website': '',
+            'latitude': float(lat.median()),
+            'longitude': float(lon.median()),
+            'school_count': n,
+            'map_tip_line': f'Gemeente · {n} school(s) in huidige filters',
+            'gemeente_selected': gem in gem_sel,
+        })
+    return pd.DataFrame(rows)
+
+
 def _apply_school_map_pick(selection, filtered_reset_df, clubs_coll):
-    """Verwerk klik op scholenkaart: damclub → popup, school → bestaande selectie."""
+    """Verwerk klik op scholenkaart: gemeente → filter, damclub → popup, school → selectie."""
     picked = _pydeck_first_picked_object(selection)
     if not picked or not isinstance(picked, dict):
+        return
+    gn = picked.get('gemeentenaam')
+    if gn and str(gn).strip():
+        st.session_state['school_filter_gem'] = [str(gn).strip()]
+        st.session_state.pop('school_map_club_popup', None)
         return
     cid = picked.get('club_id')
     if cid:
@@ -284,11 +367,26 @@ def render_schools(db, map_height: int):
     _ms_help = 'Geen selectie = alles tonen. Meerdere waarden: elk van die waarden (OR binnen dit veld).'
     prov_opts = sorted(df['provincie'].dropna().unique().tolist())
     prov_sel = sb.multiselect('Provincie', options=prov_opts, default=[], key='school_filter_prov', help=_ms_help)
+    if prov_sel:
+        gem_pool = df[df['provincie'].isin(prov_sel)]
+    else:
+        gem_pool = df
     gem_vals = sorted(
-        {str(v).strip() for v in df['gemeente'].dropna().unique() if str(v).strip()},
+        {str(v).strip() for v in gem_pool['gemeente'].dropna().unique() if str(v).strip()},
         key=lambda x: x.lower(),
     )
-    gem_sel = sb.multiselect('Gemeente', options=gem_vals, default=[], key='school_filter_gem', help=_ms_help)
+    if 'school_filter_gem' not in st.session_state:
+        st.session_state['school_filter_gem'] = []
+    _allowed_gem = set(gem_vals)
+    _cur_gem = [g for g in st.session_state.get('school_filter_gem', []) if g in _allowed_gem]
+    if _cur_gem != st.session_state.get('school_filter_gem', []):
+        st.session_state['school_filter_gem'] = _cur_gem
+    gem_sel = sb.multiselect(
+        'Gemeente',
+        options=gem_vals,
+        key='school_filter_gem',
+        help=_ms_help + (' Alleen gemeenten uit de gekozen provincie(s).' if prov_sel else ''),
+    )
     soort_opts = sorted(df['soort'].dropna().unique().tolist())
     soort_sel = sb.multiselect('Soort', options=soort_opts, default=[], key='school_filter_soort', help=_ms_help)
     status_opts = sorted(df['status'].dropna().unique().tolist())
@@ -303,29 +401,14 @@ def render_schools(db, map_height: int):
 
     search = st.text_input('Zoek school, plaats, admin.nr., e-mail …')
 
-    filtered = df.copy()
-    if prov_sel:
-        filtered = filtered[filtered['provincie'].isin(prov_sel)]
-    if gem_sel:
-        filtered = filtered[filtered['gemeente'].isin(gem_sel)]
-    if soort_sel:
-        filtered = filtered[filtered['soort'].isin(soort_sel)]
-    if status_sel:
-        filtered = filtered[filtered['status'].isin(status_sel)]
     pc_lo = _parse_postcode_range_input(pc_min_in)
     pc_hi = _parse_postcode_range_input(pc_max_in)
     if pc_lo is not None and pc_hi is not None and pc_lo > pc_hi:
         pc_lo, pc_hi = pc_hi, pc_lo
-    if pc_lo is not None or pc_hi is not None:
-        m_pc = filtered['postcode4'].notna()
-        if pc_lo is not None:
-            m_pc &= filtered['postcode4'] >= pc_lo
-        if pc_hi is not None:
-            m_pc &= filtered['postcode4'] <= pc_hi
-        filtered = filtered[m_pc]
-    if search:
-        m = filtered['text_search'].str.contains(search, case=False, na=False)
-        filtered = filtered[m]
+
+    filtered = _filter_schools_df(
+        df, prov_sel, gem_sel, soort_sel, status_sel, pc_lo, pc_hi, search,
+    )
 
     filtered_reset = filtered.reset_index(drop=True)
 
@@ -397,6 +480,17 @@ def render_schools(db, map_height: int):
         if not show_clubs_on_map:
             st.session_state.pop('school_map_club_popup', None)
 
+        show_gemeenten_on_map = st.checkbox(
+            'Gemeenten op kaart (klik = gemeentefilter)',
+            value=False,
+            key='school_map_show_gemeenten',
+            help=(
+                'Groene labels = gemeenten met scholen in de huidige filters (provincie, soort, status, '
+                'postcode, zoekterm). Klik zet het gemeentefilter; scholen en damclubs volgen daarna. '
+                'Geen volledige gemeentegrenzen (te zwaar voor de browser); centra uit schoolcoördinaten.'
+            ),
+        )
+
         nl_lat_lo, nl_lat_hi = 50.5, 53.7
         nl_lon_lo, nl_lon_hi = 3.0, 7.5
 
@@ -433,7 +527,18 @@ def render_schools(db, map_height: int):
             vcl['map_tip_line'] = 'Damclub'
             valid_clubs = vcl
 
-        if valid_schools.empty and valid_clubs.empty:
+        valid_gemeenten = pd.DataFrame()
+        if show_gemeenten_on_map:
+            gm = _gemeenten_map_markers(
+                df, prov_sel, gem_sel, soort_sel, status_sel, pc_lo, pc_hi, search,
+            )
+            if not gm.empty:
+                valid_gemeenten = gm[
+                    (gm['latitude'] >= nl_lat_lo) & (gm['latitude'] <= nl_lat_hi) &
+                    (gm['longitude'] >= nl_lon_lo) & (gm['longitude'] <= nl_lon_hi)
+                ].copy()
+
+        if valid_schools.empty and valid_clubs.empty and valid_gemeenten.empty:
             parts = [
                 'Geen punten met coördinaten binnen het NL-kaartvenster voor deze instellingen.',
             ]
@@ -453,6 +558,9 @@ def render_schools(db, map_height: int):
             if not valid_clubs.empty:
                 lats.extend(valid_clubs['latitude'].astype(float).tolist())
                 lons.extend(valid_clubs['longitude'].astype(float).tolist())
+            if not valid_gemeenten.empty:
+                lats.extend(valid_gemeenten['latitude'].astype(float).tolist())
+                lons.extend(valid_gemeenten['longitude'].astype(float).tolist())
 
             zoom_close = 12.8
             center_lat = float(pd.Series(lats).median())
@@ -479,7 +587,82 @@ def render_schools(db, map_height: int):
                 center_lon = float(sel_m.iloc[0]['longitude'])
                 zoom = zoom_close
 
+            def _website_link_col(series):
+                return series.apply(
+                    lambda w: f'<br/><a href="{w}" target="_blank">Website</a>' if w else ''
+                )
+
+            if not valid_schools.empty:
+                valid_schools = valid_schools.copy()
+                valid_schools['website_link'] = _website_link_col(valid_schools['website'])
+            if not valid_clubs.empty:
+                valid_clubs = valid_clubs.copy()
+                valid_clubs['website_link'] = _website_link_col(valid_clubs['website'])
+            if not valid_gemeenten.empty:
+                valid_gemeenten = valid_gemeenten.copy()
+                valid_gemeenten['website_link'] = ''
+
+            tooltip = {
+                'html': '<b>{naam}</b><br/>{map_tip_line}<br/>{plaats}{website_link}',
+                'style': {'backgroundColor': 'black', 'color': 'white'},
+            }
+
             layers = []
+            if not valid_gemeenten.empty:
+                gm_plain = valid_gemeenten[~valid_gemeenten['gemeente_selected']].copy()
+                gm_sel = valid_gemeenten[valid_gemeenten['gemeente_selected']].copy()
+                if not gm_plain.empty:
+                    layers.append(
+                        pdk.Layer(
+                            'ScatterplotLayer',
+                            data=gm_plain,
+                            id='school_map_gemeente',
+                            pickable=True,
+                            opacity=0.55,
+                            stroked=True,
+                            filled=True,
+                            radius_min_pixels=10,
+                            radius_max_pixels=22,
+                            get_position='[longitude, latitude]',
+                            get_fill_color='[72, 140, 72, 140]',
+                            get_line_color='[30, 70, 30]',
+                            get_radius=2800,
+                            auto_highlight=True,
+                        )
+                    )
+                if not gm_sel.empty:
+                    layers.append(
+                        pdk.Layer(
+                            'ScatterplotLayer',
+                            data=gm_sel,
+                            id='school_map_gemeente_selected',
+                            pickable=True,
+                            opacity=0.85,
+                            stroked=True,
+                            filled=True,
+                            radius_min_pixels=12,
+                            radius_max_pixels=28,
+                            get_position='[longitude, latitude]',
+                            get_fill_color='[20, 120, 40, 220]',
+                            get_line_color='[255, 255, 255]',
+                            get_radius=3600,
+                            auto_highlight=True,
+                        )
+                    )
+                layers.append(
+                    pdk.Layer(
+                        'TextLayer',
+                        data=valid_gemeenten,
+                        id='school_map_gemeente_labels',
+                        pickable=True,
+                        get_position='[longitude, latitude]',
+                        get_text='gemeentenaam',
+                        get_size=13,
+                        get_color='[25, 70, 25, 230]',
+                        get_text_anchor='"middle"',
+                        get_alignment_baseline='"bottom"',
+                    )
+                )
             if not valid_schools.empty:
                 layers.append(
                     pdk.Layer(
@@ -522,6 +705,9 @@ def render_schools(db, map_height: int):
                 hl = sel_m[
                     ['naam', 'plaats', 'website', 'latitude', 'longitude', 'school_id', 'administratienummer', 'map_tip_line']
                 ].copy()
+                hl['website_link'] = hl['website'].apply(
+                    lambda w: f'<br/><a href="{w}" target="_blank">Website</a>' if w else ''
+                )
                 layers.append(
                     pdk.Layer(
                         'ScatterplotLayer',
@@ -540,13 +726,6 @@ def render_schools(db, map_height: int):
                         auto_highlight=True,
                     )
                 )
-            tooltip = {
-                'html': (
-                    '<b>{naam}</b><br/>{map_tip_line}<br/>{plaats}<br/>'
-                    '<a href="{website}" target="_blank">Website</a>'
-                ),
-                'style': {'backgroundColor': 'black', 'color': 'white'},
-            }
             deck = pdk.Deck(
                 map_style='light',
                 initial_view_state=pdk.ViewState(latitude=center_lat, longitude=center_lon, zoom=zoom, pitch=0),
@@ -562,9 +741,11 @@ def render_schools(db, map_height: int):
                 key='school_map',
             )
             _apply_school_map_pick(sel, filtered_reset, db['clubs'])
-            cap = 'Klik op een **lichtblauw** schoolpunt om de school te selecteren.'
+            cap = '**Lichtblauw** = school (klik = selectie).'
+            if not valid_gemeenten.empty:
+                cap += f' **Groen** = gemeente ({len(valid_gemeenten)}; klik = gemeentefilter).'
             if not valid_clubs.empty:
-                cap += f' **Oranje** = damclub ({len(valid_clubs)} in beeld); klik voor korte gegevens in een venster.'
+                cap += f' **Oranje** = damclub ({len(valid_clubs)}; klik = gegevens).'
             st.caption(cap)
             warn_parts = []
             if invalid_schools:
