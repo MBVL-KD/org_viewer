@@ -259,6 +259,7 @@ def row_to_document(row: pd.Series, bron: str) -> Optional[dict]:
         soort = _infer_soort_from_filename(bron)
 
     doc: dict = {
+        'land': 'NL',
         'administratienummer': admin,
         'naam': naam,
         'plaats': plaats,
@@ -364,7 +365,7 @@ def _merge_preserve_email(doc: dict) -> None:
     if _norm(doc.get('email')):
         return
     existing = schools_coll.find_one(
-        {'administratienummer': doc['administratienummer']},
+        {'administratienummer': doc['administratienummer'], 'land': 'NL'},
         projection={'email': 1},
     )
     if existing and _norm(existing.get('email')):
@@ -389,7 +390,7 @@ def collect_ids_and_import(paths: Iterable[Path]) -> Tuple[int, Set[str]]:
             all_ids.add(doc['administratienummer'])
             _merge_preserve_email(doc)
             schools_coll.update_one(
-                {'administratienummer': doc['administratienummer']},
+                {'administratienummer': doc['administratienummer'], 'land': 'NL'},
                 {'$set': doc},
                 upsert=True,
             )
@@ -403,7 +404,10 @@ def prune_schools_not_in(admin_ids: Set[str]) -> int:
     if not admin_ids:
         print('Geen administratienummers verzameld: overslaan prune.', flush=True)
         return 0
-    res = schools_coll.delete_many({'administratienummer': {'$nin': list(admin_ids)}})
+    res = schools_coll.delete_many({
+        '$or': [{'land': 'NL'}, {'land': {'$exists': False}}, {'land': None}, {'land': ''}],
+        'administratienummer': {'$nin': list(admin_ids)},
+    })
     return int(res.deleted_count)
 
 
@@ -607,12 +611,15 @@ def geocode_schools_without_coords():
     from scraper import geocode_query
 
     q = {
-        '$or': [
-            {'lat': {'$exists': False}},
-            {'lat': None},
-            {'lon': {'$exists': False}},
-            {'lon': None},
-        ]
+        '$or': [{'land': 'NL'}, {'land': {'$exists': False}}, {'land': None}, {'land': ''}],
+        '$and': [{
+            '$or': [
+                {'lat': {'$exists': False}},
+                {'lat': None},
+                {'lon': {'$exists': False}},
+                {'lon': None},
+            ],
+        }],
     }
     work = list(schools_coll.find(q))
     total = len(work)
@@ -723,7 +730,7 @@ def main():
     args = parser.parse_args()
 
     _mongo_ping()
-    schools_coll.create_index('administratienummer', unique=True)
+    schools_coll.create_index([('administratienummer', 1), ('land', 1)], unique=True)
 
     if args.scrape_only:
         print('Start e-mailscraping (--scrape-only, geen import)...', flush=True)

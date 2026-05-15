@@ -8,7 +8,14 @@ import pydeck as pdk
 import streamlit as st
 from bson import ObjectId
 
+from de_bundesland import bundesland_filter_label
 from nl_provincie import canonical_nl_provincie_club, normalize_nl_provincienaam
+from scraper import is_valid_de_coords, is_valid_nl_coords
+
+MAP_VIEWPORT = {
+    'NL': {'center_lat': 52.2, 'center_lon': 5.3, 'zoom': 7.0, 'label': 'Nederland'},
+    'DE': {'center_lat': 51.1, 'center_lon': 10.4, 'zoom': 5.8, 'label': 'Duitsland'},
+}
 
 LIST_VISIBLE_ROWS = 10
 TABLE_ROW_PX = 36
@@ -37,6 +44,120 @@ def _parse_postcode_range_input(text: str) -> Optional[int]:
     if not text or not str(text).strip():
         return None
     return _postcode_first_four_digits(str(text).strip())
+
+
+def _postcode_plz_five(pc) -> Optional[int]:
+    """Duitse PLZ: eerste 5 cijfers."""
+    if pc is None or (isinstance(pc, float) and pd.isna(pc)):
+        return None
+    digits = ''.join(c for c in str(pc) if c.isdigit())
+    if len(digits) >= 5:
+        return int(digits[:5])
+    return None
+
+
+def _parse_postcode_range_input_de(text: str) -> Optional[int]:
+    if not text or not str(text).strip():
+        return None
+    return _postcode_plz_five(str(text).strip())
+
+
+def _coords_ok_for_land(lat, lon, land_code: str) -> bool:
+    try:
+        lat_f, lon_f = float(lat), float(lon)
+    except (TypeError, ValueError):
+        return False
+    if land_code == 'DE':
+        return is_valid_de_coords(lat_f, lon_f)
+    return is_valid_nl_coords(lat_f, lon_f)
+
+
+def _prepare_map_coords_df(
+    df: pd.DataFrame,
+    lat_col: str,
+    lon_col: str,
+    land_code: str,
+) -> tuple[pd.DataFrame, int]:
+    """Numerieke coördinaten; filter op land, niet op een vast kaartvenster."""
+    if df.empty:
+        return df.copy(), 0
+    out = df.copy()
+    out[lat_col] = pd.to_numeric(out[lat_col], errors='coerce')
+    out[lon_col] = pd.to_numeric(out[lon_col], errors='coerce')
+    out = out.dropna(subset=[lat_col, lon_col])
+    if out.empty:
+        return out, 0
+    mask = out.apply(
+        lambda r: _coords_ok_for_land(r[lat_col], r[lon_col], land_code),
+        axis=1,
+    )
+    invalid = int((~mask).sum())
+    return out.loc[mask].copy(), invalid
+
+
+def _count_schools_with_coords(df: pd.DataFrame) -> int:
+    if df.empty or 'lat' not in df.columns or 'lon' not in df.columns:
+        return 0
+    lat = pd.to_numeric(df['lat'], errors='coerce')
+    lon = pd.to_numeric(df['lon'], errors='coerce')
+    return int((lat.notna() & lon.notna()).sum())
+
+
+def _map_empty_messages(
+    land_code: str,
+    land_choice: str,
+    filtered_reset: pd.DataFrame,
+    n_with_coords: int,
+    valid_schools: pd.DataFrame,
+    invalid_schools: int,
+    schools_coll,
+    show_clubs_on_map: bool,
+    clubs_raw: pd.DataFrame,
+) -> str:
+    parts = [f'Geen punten om op de kaart te tonen voor {land_choice}.']
+    if len(filtered_reset) and n_with_coords == 0:
+        n = len(filtered_reset)
+        parts.append(
+            f'{n} school(s) in de selectie zonder bruikbare lat/lon. '
+            'Draai geocode of vul coördinaten handmatig in.'
+        )
+    elif n_with_coords and valid_schools.empty and invalid_schools:
+        parts.append(
+            f'{invalid_schools} school(s) hebben coördinaten die niet bij dit land passen.'
+        )
+    if land_code == 'NL':
+        other = schools_coll.count_documents({
+            'land': 'DE', 'lat': {'$ne': None}, 'lon': {'$ne': None},
+        })
+        if other:
+            parts.append(
+                f'Tip: kies **Duitsland** bij Land — er staan {other} Duitse scholen met coördinaten.'
+            )
+    else:
+        other = schools_coll.count_documents({
+            '$or': [{'land': 'NL'}, {'land': {'$exists': False}}],
+            'lat': {'$ne': None},
+            'lon': {'$ne': None},
+        })
+        if other:
+            parts.append(
+                f'Tip: kies **Nederland** bij Land — er staan {other} NL-scholen met coördinaten.'
+            )
+    if show_clubs_on_map and clubs_raw.empty and len(filtered_reset) > 0:
+        parts.append('Geen damclubs voldoen aan de criteria, of clubs missen coördinaten.')
+    return ' '.join(parts)
+
+
+def _mongo_school_land_query(land_code: str) -> dict:
+    if land_code == 'DE':
+        return {'land': 'DE'}
+    return {'$or': [{'land': 'NL'}, {'land': {'$exists': False}}, {'land': None}, {'land': ''}]}
+
+
+def _provincie_filter_label(value: str, land_code: str) -> str:
+    if land_code == 'DE':
+        return bundesland_filter_label(value)
+    return str(value)
 
 
 def _serialize_mongo_doc(doc):
@@ -120,6 +241,7 @@ def _filter_schools_df(
     search: str,
     *,
     skip_gemeente: bool = False,
+    postcode_col: str = 'postcode4',
 ) -> pd.DataFrame:
     """Pas schoolfilters toe; skip_gemeente=True voor gemeenten-markers op de kaart."""
     out = df.copy()
@@ -132,11 +254,11 @@ def _filter_schools_df(
     if status_sel:
         out = out[out['status'].isin(status_sel)]
     if pc_lo is not None or pc_hi is not None:
-        m_pc = out['postcode4'].notna()
+        m_pc = out[postcode_col].notna()
         if pc_lo is not None:
-            m_pc &= out['postcode4'] >= pc_lo
+            m_pc &= out[postcode_col] >= pc_lo
         if pc_hi is not None:
-            m_pc &= out['postcode4'] <= pc_hi
+            m_pc &= out[postcode_col] <= pc_hi
         out = out[m_pc]
     if search:
         out = out[out['text_search'].str.contains(search, case=False, na=False)]
@@ -152,10 +274,14 @@ def _gemeenten_map_markers(
     pc_lo: Optional[int],
     pc_hi: Optional[int],
     search: str,
+    *,
+    postcode_col: str = 'postcode4',
+    place_label: str = 'Gemeente',
 ) -> pd.DataFrame:
-    """Klikbare gemeentecentra (uit scholen met coördinaten), rekening houdend met alle filters behalve gemeente."""
+    """Klikbare plaatscentra (uit scholen met coördinaten), rekening houdend met alle filters behalve gemeente."""
     base = _filter_schools_df(
-        df, prov_sel, [], soort_sel, status_sel, pc_lo, pc_hi, search, skip_gemeente=True,
+        df, prov_sel, [], soort_sel, status_sel, pc_lo, pc_hi, search,
+        skip_gemeente=True, postcode_col=postcode_col,
     )
     sub = base[base['gemeente'].astype(str).str.strip().astype(bool)].copy()
     sub = sub.dropna(subset=['lat', 'lon'])
@@ -181,7 +307,7 @@ def _gemeenten_map_markers(
             'latitude': float(lat.median()),
             'longitude': float(lon.median()),
             'school_count': n,
-            'map_tip_line': f'Gemeente · {n} school(s) in huidige filters',
+            'map_tip_line': f'{place_label} · {n} school(s) in huidige filters',
             'gemeente_selected': gem in gem_sel,
         })
     return pd.DataFrame(rows)
@@ -200,7 +326,7 @@ def _map_pick_fingerprint(picked: dict) -> str:
     return '|'.join(parts)
 
 
-def _apply_school_map_pick(selection, filtered_reset_df, clubs_coll):
+def _apply_school_map_pick(selection, filtered_reset_df, clubs_coll, gem_key: str, pending_gem_key: str):
     """Verwerk klik op scholenkaart: gemeente → filter, damclub → popup, school → selectie."""
     picked = _pydeck_first_picked_object(selection)
     if not picked or not isinstance(picked, dict):
@@ -213,11 +339,11 @@ def _apply_school_map_pick(selection, filtered_reset_df, clubs_coll):
     gn = picked.get('gemeentenaam')
     if gn and str(gn).strip():
         gn = str(gn).strip()
-        current = list(st.session_state.get('school_filter_gem', []))
+        current = list(st.session_state.get(gem_key, []))
         # Pydeck houdt de klik-selectie vast na rerun: niet opnieuw rerunnen als al in filter.
         if gn not in current:
             current.append(gn)
-            st.session_state['_pending_school_filter_gem'] = current
+            st.session_state[pending_gem_key] = current
             st.session_state.pop('school_map_club_popup', None)
             st.rerun()
         return
@@ -342,13 +468,30 @@ def _clubs_overlay_for_school_filters(
 
 def render_schools(db, map_height: int):
     schools_coll = db['schools']
-    schools = list(schools_coll.find())
+    sb = st.sidebar
+    sb.header('Filters (scholen)')
+    land_choice = sb.radio(
+        'Land',
+        ['Nederland', 'Duitsland'],
+        horizontal=True,
+        key='school_view_land',
+    )
+    land_code = 'DE' if land_choice == 'Duitsland' else 'NL'
+    vp = MAP_VIEWPORT[land_code]
+
+    schools = list(schools_coll.find(_mongo_school_land_query(land_code)))
     if not schools:
-        st.info(
-            'Nog geen scholen in de database. Importeer CSV’s met:\n\n'
-            '`python3 import_schools.py pad/naar/ho-Scholen.csv pad/naar/Scholen-3.csv pad/naar/Scholen-4.csv`\n\n'
-            'Optioneel: `--geocode` voor coördinaten (duurt langer).'
-        )
+        if land_code == 'DE':
+            st.info(
+                'Nog geen Duitse scholen in de database. Testimport:\n\n'
+                '`python3 import_schools_de.py --limit 100 --geocode`'
+            )
+        else:
+            st.info(
+                'Nog geen scholen in de database. Importeer CSV’s met:\n\n'
+                '`python3 import_schools.py pad/naar/ho-Scholen.csv …`\n\n'
+                'Optioneel: `--geocode` voor coördinaten (duurt langer).'
+            )
         return
 
     export_json = json.dumps([_serialize_mongo_doc(s) for s in schools], ensure_ascii=False, indent=2).encode('utf-8')
@@ -392,16 +535,29 @@ def render_schools(db, map_height: int):
         })
 
     df = pd.DataFrame(rows)
-    df['postcode4'] = df['postcode_vestiging'].apply(_postcode_first_four_digits)
-    sb = st.sidebar
-    sb.header('Filters (scholen)')
+    if land_code == 'DE':
+        df['postcode_filter'] = df['postcode_vestiging'].apply(_postcode_plz_five)
+        postcode_col = 'postcode_filter'
+    else:
+        df['postcode4'] = df['postcode_vestiging'].apply(_postcode_first_four_digits)
+        postcode_col = 'postcode4'
+
     _ms_help = 'Geen selectie = alles tonen. Meerdere waarden: elk van die waarden (OR binnen dit veld).'
+    prov_label = 'Bundesland' if land_code == 'DE' else 'Provincie'
     prov_opts = sorted(df['provincie'].dropna().unique().tolist())
-    prov_sel = sb.multiselect('Provincie', options=prov_opts, default=[], key='school_filter_prov', help=_ms_help)
-    # Eventuele pending-gemeenteselectie toepassen vóórdat de widget wordt aangemaakt.
-    pending_gem = st.session_state.pop('_pending_school_filter_gem', None)
+    prov_sel = sb.multiselect(
+        prov_label,
+        options=prov_opts,
+        default=[],
+        key=f'school_filter_prov_{land_code}',
+        format_func=lambda v: _provincie_filter_label(v, land_code),
+        help=_ms_help,
+    )
+    gem_key = f'school_filter_gem_{land_code}'
+    pending_gem_key = f'_pending_school_filter_gem_{land_code}'
+    pending_gem = st.session_state.pop(pending_gem_key, None)
     if pending_gem is not None:
-        st.session_state['school_filter_gem'] = pending_gem
+        st.session_state[gem_key] = pending_gem
     if prov_sel:
         gem_pool = df[df['provincie'].isin(prov_sel)]
     else:
@@ -410,57 +566,76 @@ def render_schools(db, map_height: int):
         {str(v).strip() for v in gem_pool['gemeente'].dropna().unique() if str(v).strip()},
         key=lambda x: x.lower(),
     )
-    if 'school_filter_gem' not in st.session_state:
-        st.session_state['school_filter_gem'] = []
+    if gem_key not in st.session_state:
+        st.session_state[gem_key] = []
     _allowed_gem = set(gem_vals)
-    _cur_gem = [g for g in st.session_state.get('school_filter_gem', []) if g in _allowed_gem]
-    if _cur_gem != st.session_state.get('school_filter_gem', []):
-        st.session_state['school_filter_gem'] = _cur_gem
+    _cur_gem = [g for g in st.session_state.get(gem_key, []) if g in _allowed_gem]
+    if _cur_gem != st.session_state.get(gem_key, []):
+        st.session_state[gem_key] = _cur_gem
+    gem_label = 'Stadt / Gemeinde' if land_code == 'DE' else 'Gemeente'
     gem_sel = sb.multiselect(
-        'Gemeente',
+        gem_label,
         options=gem_vals,
-        key='school_filter_gem',
-        help=_ms_help + (' Alleen gemeenten uit de gekozen provincie(s).' if prov_sel else ''),
+        key=gem_key,
+        help=_ms_help + (
+            f' Alleen uit gekozen {prov_label.lower()}(en).' if prov_sel else ''
+        ),
     )
     soort_opts = sorted(df['soort'].dropna().unique().tolist())
-    soort_sel = sb.multiselect('Soort', options=soort_opts, default=[], key='school_filter_soort', help=_ms_help)
+    soort_sel = sb.multiselect(
+        'Soort', options=soort_opts, default=[], key=f'school_filter_soort_{land_code}', help=_ms_help,
+    )
     status_opts = sorted(df['status'].dropna().unique().tolist())
-    status_sel = sb.multiselect('Status', options=status_opts, default=[], key='school_filter_status', help=_ms_help)
-    sb.markdown('Postcode (eerste 4 cijfers)')
+    status_sel = sb.multiselect(
+        'Status', options=status_opts, default=[], key=f'school_filter_status_{land_code}', help=_ms_help,
+    )
+    if land_code == 'DE':
+        sb.markdown('PLZ (5 cijfers)')
+        pc_ph_lo, pc_ph_hi = '10115', '10999'
+    else:
+        sb.markdown('Postcode (eerste 4 cijfers)')
+        pc_ph_lo, pc_ph_hi = '1000', '1099'
     pc_col1, pc_col2 = sb.columns(2)
     with pc_col1:
-        pc_min_in = st.text_input('Van', placeholder='bv. 1000', key='school_pc_min')
+        pc_min_in = st.text_input('Van', placeholder=pc_ph_lo, key=f'school_pc_min_{land_code}')
     with pc_col2:
-        pc_max_in = st.text_input('Tot', placeholder='bv. 1099', key='school_pc_max')
+        pc_max_in = st.text_input('Tot', placeholder=pc_ph_hi, key=f'school_pc_max_{land_code}')
     sb.caption('Leeg laten = geen onder-/bovengrens. Ongeldige invoer wordt genegeerd.')
     sb.markdown('**Kaartlagen**')
     show_gemeenten_on_map = sb.checkbox(
-        'Gemeenten op kaart',
+        'Gemeenten op kaart' if land_code == 'NL' else 'Städte op kaart',
         value=False,
-        key='school_map_show_gemeenten',
+        key=f'school_map_show_gemeenten_{land_code}',
         help=(
-            'Groene punten: klik voegt gemeente toe aan het filter. '
+            'Groene punten: klik voegt plaats/gemeente toe aan het filter. '
             'Centra uit schoolcoördinaten (geen officiële grenzen).'
         ),
     )
-    show_clubs_on_map = sb.checkbox(
-        'Damclubs op kaart',
-        value=False,
-        key='school_map_show_clubs',
-        help='Oranje punten; zelfde provincie als schoolfilter. Klik voor korte clubinfo.',
-    )
+    show_clubs_on_map = False
+    if land_code == 'NL':
+        show_clubs_on_map = sb.checkbox(
+            'Damclubs op kaart',
+            value=False,
+            key='school_map_show_clubs',
+            help='Oranje punten; zelfde provincie als schoolfilter. Klik voor korte clubinfo.',
+        )
     if not show_clubs_on_map:
         st.session_state.pop('school_map_club_popup', None)
 
-    search = st.text_input('Zoek school, plaats, admin.nr., e-mail …')
+    search = st.text_input('Zoek school, plaats, admin.nr., e-mail …', key=f'school_search_{land_code}')
 
-    pc_lo = _parse_postcode_range_input(pc_min_in)
-    pc_hi = _parse_postcode_range_input(pc_max_in)
+    if land_code == 'DE':
+        pc_lo = _parse_postcode_range_input_de(pc_min_in)
+        pc_hi = _parse_postcode_range_input_de(pc_max_in)
+    else:
+        pc_lo = _parse_postcode_range_input(pc_min_in)
+        pc_hi = _parse_postcode_range_input(pc_max_in)
     if pc_lo is not None and pc_hi is not None and pc_lo > pc_hi:
         pc_lo, pc_hi = pc_hi, pc_lo
 
     filtered = _filter_schools_df(
         df, prov_sel, gem_sel, soort_sel, status_sel, pc_lo, pc_hi, search,
+        postcode_col=postcode_col,
     )
 
     filtered_reset = filtered.reset_index(drop=True)
@@ -471,8 +646,8 @@ def render_schools(db, map_height: int):
         if st.session_state.selected_school_id not in set(filtered_reset['_id'].tolist()):
             st.session_state.selected_school_id = None
 
-    st.subheader('Schooloverzicht')
-    st.write(f'Selectie: {len(filtered_reset)} · Totaal in database: {len(schools)}')
+    st.subheader(f'Schooloverzicht — {land_choice}')
+    st.write(f'Selectie: {len(filtered_reset)} · Totaal in database ({land_code}): {len(schools)}')
 
     d1, d2, _ = st.columns([1, 1, 4])
     with d1:
@@ -519,24 +694,18 @@ def render_schools(db, map_height: int):
     sid_map = st.session_state.selected_school_id
 
     with col_map:
-        nl_lat_lo, nl_lat_hi = 50.5, 53.7
-        nl_lon_lo, nl_lon_hi = 3.0, 7.5
-
         map_df = filtered_reset[
             ['naam', 'plaats', 'website', 'lat', 'lon', '_id', 'administratienummer']
-        ].dropna(subset=['lat', 'lon'])
+        ].copy()
         valid_schools = pd.DataFrame()
         invalid_schools = 0
         if not map_df.empty:
             map_df = map_df.rename(columns={'lat': 'latitude', 'lon': 'longitude'})
             map_df['school_id'] = map_df['_id'].astype(str)
             map_df['map_tip_line'] = map_df['administratienummer'].astype(str)
-            vs = map_df[
-                (map_df['latitude'] >= nl_lat_lo) & (map_df['latitude'] <= nl_lat_hi) &
-                (map_df['longitude'] >= nl_lon_lo) & (map_df['longitude'] <= nl_lon_hi)
-            ].copy()
-            invalid_schools = len(map_df) - len(vs)
-            valid_schools = vs
+            valid_schools, invalid_schools = _prepare_map_coords_df(
+                map_df, 'latitude', 'longitude', land_code,
+            )
 
         clubs_raw = pd.DataFrame()
         if show_clubs_on_map:
@@ -546,37 +715,37 @@ def render_schools(db, map_height: int):
         valid_clubs = pd.DataFrame()
         invalid_clubs = 0
         if show_clubs_on_map and not clubs_raw.empty:
-            vcl = clubs_raw[
-                (clubs_raw['latitude'] >= nl_lat_lo) & (clubs_raw['latitude'] <= nl_lat_hi) &
-                (clubs_raw['longitude'] >= nl_lon_lo) & (clubs_raw['longitude'] <= nl_lon_hi)
-            ].copy()
-            invalid_clubs = len(clubs_raw) - len(vcl)
-            vcl = vcl.copy()
-            vcl['map_tip_line'] = 'Damclub'
-            valid_clubs = vcl
+            valid_clubs, invalid_clubs = _prepare_map_coords_df(
+                clubs_raw, 'latitude', 'longitude', 'NL',
+            )
+            if not valid_clubs.empty:
+                valid_clubs = valid_clubs.copy()
+                valid_clubs['map_tip_line'] = 'Damclub'
 
         valid_gemeenten = pd.DataFrame()
         if show_gemeenten_on_map:
+            place_lbl = 'Stadt' if land_code == 'DE' else 'Gemeente'
             gm = _gemeenten_map_markers(
                 df, prov_sel, gem_sel, soort_sel, status_sel, pc_lo, pc_hi, search,
+                postcode_col=postcode_col, place_label=place_lbl,
             )
             if not gm.empty:
-                valid_gemeenten = gm[
-                    (gm['latitude'] >= nl_lat_lo) & (gm['latitude'] <= nl_lat_hi) &
-                    (gm['longitude'] >= nl_lon_lo) & (gm['longitude'] <= nl_lon_hi)
-                ].copy()
+                valid_gemeenten, _ = _prepare_map_coords_df(
+                    gm, 'latitude', 'longitude', land_code,
+                )
 
         if valid_schools.empty and valid_clubs.empty and valid_gemeenten.empty:
-            parts = [
-                'Geen punten met coördinaten binnen het NL-kaartvenster voor deze instellingen.',
-            ]
-            if len(filtered_reset) and map_df.empty:
-                parts.append('Scholen in de selectie hebben geen lat/lon — draai geocode of vul coördinaten handmatig in.')
-            if show_clubs_on_map and clubs_raw.empty and filtered_reset.empty:
-                parts.append('Lege schoolselectie: geen plaatsen om damclubs aan te koppelen.')
-            if show_clubs_on_map and clubs_raw.empty and len(filtered_reset) > 0:
-                parts.append('Geen damclubs voldoen aan de criteria, of clubs missen coördinaten.')
-            st.info(' '.join(parts))
+            st.info(_map_empty_messages(
+                land_code,
+                land_choice,
+                filtered_reset,
+                _count_schools_with_coords(filtered_reset),
+                valid_schools,
+                invalid_schools,
+                schools_coll,
+                show_clubs_on_map,
+                clubs_raw,
+            ))
         else:
             lats: List[float] = []
             lons: List[float] = []
@@ -593,7 +762,7 @@ def render_schools(db, map_height: int):
             zoom_close = 12.8
             center_lat = float(pd.Series(lats).median())
             center_lon = float(pd.Series(lons).median())
-            zoom = 7.0
+            zoom = float(vp['zoom'])
             lat_span = float(max(lats) - min(lats))
             lon_span = float(max(lons) - min(lons))
             if lat_span < 0.4 and lon_span < 0.4:
@@ -768,7 +937,7 @@ def render_schools(db, map_height: int):
                 on_select='rerun',
                 key='school_map',
             )
-            _apply_school_map_pick(sel, filtered_reset, db['clubs'])
+            _apply_school_map_pick(sel, filtered_reset, db['clubs'], gem_key, pending_gem_key)
             cap = '**Lichtblauw** = school (klik = selectie).'
             if not valid_gemeenten.empty:
                 cap += f' **Groen** = gemeente ({len(valid_gemeenten)}; klik = gemeentefilter).'
@@ -777,9 +946,13 @@ def render_schools(db, map_height: int):
             st.caption(cap)
             warn_parts = []
             if invalid_schools:
-                warn_parts.append(f'{invalid_schools} schoolpunt(en) buiten het NL-venster verborgen.')
+                warn_parts.append(
+                    f'{invalid_schools} schoolpunt(en) met ongeldige coördinaten voor {land_choice} niet getoond.'
+                )
             if invalid_clubs:
-                warn_parts.append(f'{invalid_clubs} clubpunt(en) buiten het NL-venster verborgen.')
+                warn_parts.append(
+                    f'{invalid_clubs} clubpunt(en) met ongeldige coördinaten niet getoond.'
+                )
             if warn_parts:
                 st.warning(' '.join(warn_parts))
 
@@ -797,7 +970,10 @@ def render_schools(db, map_height: int):
             st.write('**Status:**', selected.get('status', ''))
             st.write('**Plaats:**', selected.get('plaats', ''))
             st.write('**Gemeente:**', selected.get('gemeente', ''))
-            st.write('**Provincie:**', selected.get('provincie', ''))
+            prov_key = 'Bundesland' if land_code == 'DE' else 'Provincie'
+            st.write(f'**{prov_key}:**', selected.get('provincie', ''))
+            if land_code == 'DE' and selected.get('bundesland_code'):
+                st.write('**Bundesland-code:**', selected.get('bundesland_code', ''))
             st.write('**Adres vestiging:**', ' '.join(filter(None, [
                 selected.get('straat_vestiging'),
                 selected.get('huisnr_vestiging'),

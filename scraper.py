@@ -201,13 +201,26 @@ def is_valid_nl_coords(lat, lon):
     return 50.5 <= lat <= 53.7 and 3.2 <= lon <= 7.2
 
 
-def _nominatim_hit_is_netherlands(hit):
-    """Bbox is ruim en dekt Vlaanderen; extra check op OSM-landcode."""
+def is_valid_de_coords(lat, lon):
+    try:
+        lat = float(lat)
+        lon = float(lon)
+    except Exception:
+        return False
+    return 47.2 <= lat <= 55.2 and 5.8 <= lon <= 15.1
+
+
+def _nominatim_hit_is_country(hit, country_code: str) -> bool:
+    """Extra check op OSM-landcode (NL/DE)."""
     addr = hit.get('address') or {}
     cc = (addr.get('country_code') or '').lower()
     if cc:
-        return cc == 'nl'
+        return cc == country_code.lower()
     return True
+
+
+def _nominatim_hit_is_netherlands(hit):
+    return _nominatim_hit_is_country(hit, 'nl')
 
 
 def extract_field(text, label):
@@ -656,16 +669,20 @@ def _nominatim_hit_matches_plaats(hit, plaats: str) -> bool:
     return _plaats_matches_reverse_haystack(plaats, _nominatim_hit_haystack(hit))
 
 
-def geocode_query(query, skip_cache=False, plaats_expected=None):
+def geocode_query(query, skip_cache=False, plaats_expected=None, countrycodes='nl'):
+    cc = (countrycodes or 'nl').strip().lower() or 'nl'
     cache = load_geocode_cache()
-    cache_key = query if not plaats_expected else f'{query}\0{plaats_expected.strip().lower()}'
+    cache_key = f'{cc}\0{query}\0{(plaats_expected or "").strip().lower()}'
     if not skip_cache and cache_key in cache:
         cached = cache[cache_key]
-        if isinstance(cached, dict) and cached.get('provincie'):
+        if isinstance(cached, dict) and cached.get('provincie') and cc == 'nl':
             pn = normalize_nl_provincienaam(cached['provincie'])
             if pn != cached['provincie']:
                 return {**cached, 'provincie': pn}
         return cached
+
+    coord_ok = is_valid_de_coords if cc == 'de' else is_valid_nl_coords
+    country_hit_ok = lambda h: _nominatim_hit_is_country(h, cc)
 
     try:
         response = requests.get(
@@ -675,7 +692,7 @@ def geocode_query(query, skip_cache=False, plaats_expected=None):
                 'format': 'json',
                 'limit': 8,
                 'addressdetails': 1,
-                'countrycodes': 'nl',
+                'countrycodes': cc,
             },
             headers={'User-Agent': USER_AGENT},
             timeout=30,
@@ -688,9 +705,9 @@ def geocode_query(query, skip_cache=False, plaats_expected=None):
         for hit in results:
             lat = float(hit['lat'])
             lon = float(hit['lon'])
-            if not is_valid_nl_coords(lat, lon):
+            if not coord_ok(lat, lon):
                 continue
-            if not _nominatim_hit_is_netherlands(hit):
+            if not country_hit_ok(hit):
                 continue
             if pe and not _nominatim_hit_matches_plaats(hit, pe):
                 continue
