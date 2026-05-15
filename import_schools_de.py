@@ -11,6 +11,7 @@ Voorbeelden:
   python3 import_schools_de.py --csv ~/Downloads/latest.csv --limit 500
   python3 import_schools_de.py --geocode-only
   python3 import_schools_de.py --limit 100 --geocode
+  python3 import_schools_de.py --normalize-soort-only   # herbereken soort_norm op alle DE-records
 """
 from __future__ import annotations
 
@@ -26,12 +27,13 @@ import certifi
 import pandas as pd
 import requests
 from dotenv import load_dotenv
-from pymongo import MongoClient
+from pymongo import MongoClient, UpdateOne
 
 from de_bundesland import (
     bundesland_code_from_school_id,
     normalize_de_bundesland,
 )
+from de_school_soort import normalize_de_school_soort
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
@@ -121,6 +123,8 @@ def api_record_to_document(rec: dict, bron: str) -> Optional[dict]:
     lat = _float_or_none(rec.get('latitude'))
     lon = _float_or_none(rec.get('longitude'))
 
+    soort_raw = _norm(rec.get('school_type'))
+    sn, sd = normalize_de_school_soort(soort_raw)
     doc: dict = {
         'land': 'DE',
         'administratienummer': admin,
@@ -130,7 +134,9 @@ def api_record_to_document(rec: dict, bron: str) -> Optional[dict]:
         'provincie': bundesland,
         'bundesland_code': bundesland_code,
         'status': _norm(rec.get('legal_status')),
-        'soort': _norm(rec.get('school_type')),
+        'soort': soort_raw,
+        'soort_norm': sn,
+        'soort_norm_detail': sd,
         'straat_vestiging': straat,
         'huisnr_vestiging': '',
         'huisnr_toev_vestiging': '',
@@ -297,8 +303,6 @@ def _merge_preserve_coords(doc: dict) -> None:
 
 
 def upsert_documents(docs: Iterable[dict], batch_size: int = 500) -> Tuple[int, Set[str]]:
-    from pymongo import UpdateOne
-
     total = 0
     ids: Set[str] = set()
     ops: List[UpdateOne] = []
@@ -516,6 +520,43 @@ def run_scrape_missing_emails_de(
     return updated
 
 
+def run_normalize_de_soort_only(limit: Optional[int] = None) -> int:
+    """Herbereken soort_norm / soort_norm_detail voor alle DE-records (na taxonomiewijziging)."""
+    q: dict = {'land': 'DE'}
+    proj = {'soort': 1}
+    cursor = schools_coll.find(q, projection=proj)
+    if limit is not None:
+        cursor = cursor.limit(limit)
+    ops: List[UpdateOne] = []
+    n = 0
+    batch = 500
+
+    def flush():
+        nonlocal ops
+        if not ops:
+            return
+        schools_coll.bulk_write(ops, ordered=False)
+        ops.clear()
+
+    for doc in cursor:
+        raw = _norm(doc.get('soort'))
+        sn, sd = normalize_de_school_soort(raw)
+        ops.append(
+            UpdateOne(
+                {'_id': doc['_id']},
+                {'$set': {'soort_norm': sn, 'soort_norm_detail': sd}},
+            ),
+        )
+        n += 1
+        if len(ops) >= batch:
+            flush()
+        if n == 1 or n % 4000 == 0:
+            print(f'  [norm DE] {n} records…', flush=True)
+    flush()
+    print(f'[norm DE] Klaar: {n} scholen bijgewerkt.', flush=True)
+    return n
+
+
 def main():
     parser = argparse.ArgumentParser(description='Duitse scholen (JedeSchule) → MongoDB.')
     parser.add_argument('--csv', type=str, default='', help='Pad naar JedeSchule CSV')
@@ -532,10 +573,19 @@ def main():
     parser.add_argument('--geocode-only', action='store_true', help='Alleen geocoderen')
     parser.add_argument('--scrape-emails', action='store_true', help='Ontbrekende e-mails via website')
     parser.add_argument('--scrape-only', action='store_true', help='Alleen e-mailscrapen')
+    parser.add_argument(
+        '--normalize-soort-only',
+        action='store_true',
+        help='Alleen soort_norm uit bestaande soort herberekenen (geen CSV/API-import)',
+    )
     args = parser.parse_args()
 
     _mongo_ping()
     schools_coll.create_index([('administratienummer', 1), ('land', 1)], unique=True)
+
+    if args.normalize_soort_only:
+        run_normalize_de_soort_only(limit=args.limit)
+        return
 
     if args.scrape_only:
         run_scrape_missing_emails_de(limit=args.limit)

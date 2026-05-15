@@ -1,4 +1,5 @@
 """Scholen-tab (Streamlit): zelfde UX-patroon als damclubs."""
+import hashlib
 import json
 import time
 from typing import Any, List, Optional
@@ -18,7 +19,7 @@ from bond_land import (
 from de_bundesland import bundesland_filter_label
 from de_school_soort import all_soort_norm_categories, normalize_de_school_soort
 from nl_provincie import canonical_nl_provincie_club, normalize_nl_provincienaam
-from scraper import is_valid_be_coords, is_valid_de_coords, is_valid_nl_coords
+from scraper import geocode_query, is_valid_be_coords, is_valid_de_coords, is_valid_nl_coords
 
 MAP_VIEWPORT = {
     'NL': {'center_lat': 52.2, 'center_lon': 5.3, 'zoom': 7.0, 'label': 'Nederland'},
@@ -88,6 +89,73 @@ def _coords_ok_for_land(lat, lon, land_code: str) -> bool:
     if land_code == 'BE':
         return is_valid_be_coords(lat_f, lon_f)
     return is_valid_nl_coords(lat_f, lon_f)
+
+
+def _geocode_country_label(land_code: str) -> str:
+    return {'NL': 'Nederland', 'BE': 'België', 'DE': 'Deutschland'}.get(land_code, 'Nederland')
+
+
+def _nominatim_countrycodes(land_code: str) -> str:
+    return {'NL': 'nl', 'BE': 'be', 'DE': 'de'}.get(land_code, 'nl')
+
+
+@st.cache_data(ttl=7200, show_spinner='Schooldammen-locaties voorbereiden…')
+def _schooldam_hotspots_geocoded(land_code: str, entries_sig: str) -> pd.DataFrame:
+    """Handmatige schooldam-lijst → kaartpunten (geocode via scraper-cache)."""
+    from schooldam_hotspots import load_hotspots, entries_for_land
+
+    del entries_sig
+    payload = load_hotspots()
+    items = entries_for_land(payload, land_code)
+    if not items:
+        return pd.DataFrame()
+    cc = _nominatim_countrycodes(land_code)
+    land_label = _geocode_country_label(land_code)
+    rows: List[dict] = []
+    for e in items:
+        lat, lon = e.get('lat'), e.get('lon')
+        if lat is not None and lon is not None:
+            try:
+                lat_f, lon_f = float(lat), float(lon)
+            except (TypeError, ValueError):
+                lat_f, lon_f = None, None
+        else:
+            lat_f, lon_f = None, None
+        if lat_f is None:
+            q = f"{e['plaats']}, {e['gemeente']}, {land_label}"
+            g = geocode_query(
+                q,
+                plaats_expected=str(e.get('plaats') or '').strip() or None,
+                countrycodes=cc,
+            )
+            if not g:
+                continue
+            lat_f, lon_f = float(g['lat']), float(g['lon'])
+        if not _coords_ok_for_land(lat_f, lon_f, land_code):
+            continue
+        gemeente = str(e.get('gemeente') or '').strip()
+        plaats = str(e.get('plaats') or '').strip()
+        conf = str(e.get('confidence') or 'zeker').strip().lower()
+        fg = (e.get('filter_gemeente') or '').strip()
+        tip = f'Schooldam · {conf} · {plaats} · {gemeente}'
+        if fg and fg.lower() != gemeente.lower():
+            tip += f' → filter: {fg}'
+        rows.append({
+            'latitude': lat_f,
+            'longitude': lon_f,
+            'naam': f'Schooldam · {plaats}',
+            'plaats': plaats,
+            'gemeente': gemeente,
+            'filter_gemeente': fg,
+            'hotspot_id': str(e.get('id') or ''),
+            'website': '',
+            'website_link': '',
+            'map_tip_line': tip,
+            'confidence': conf,
+        })
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame(rows)
 
 
 def _prepare_map_coords_df(
@@ -741,6 +809,69 @@ def render_schools(db, map_height: int):
             key='school_map_show_clubs',
             help='Oranje punten; zelfde provincie als schoolfilter. Klik voor korte clubinfo.',
         )
+    show_schooldam_hotspots = sb.checkbox(
+        'Schooldammen-locaties (handmatige lijst)',
+        value=False,
+        key=f'school_map_show_schooldam_{land_code}',
+        help=(
+            'Paars/oranje punten: plaatsen uit data/schooldam_hotspots.json waar schooldammen speelde. '
+            'Klik op een punt om de bijbehorende gemeente aan het filter toe te voegen.'
+        ),
+    )
+    with sb.expander('Schooldam-locatie toevoegen', expanded=False):
+        st.caption('Voeg een plek toe voor het gekozen land (opgeslagen in `data/schooldam_hotspots.json`).')
+        with st.form('schooldam_add_row'):
+            add_land = st.selectbox(
+                'Land',
+                ['NL', 'BE', 'DE'],
+                index=['NL', 'BE', 'DE'].index(land_code) if land_code in ('NL', 'BE', 'DE') else 0,
+                key='schooldam_form_land',
+            )
+            gem_in = st.text_input('Gemeente / Stadt', placeholder='Bijv. Zaanstad', key='schooldam_form_gem')
+            pl_in = st.text_input('Plaats (dorp/stad)', placeholder='Bijv. Zaandam', key='schooldam_form_pl')
+            conf_in = st.selectbox(
+                'Betrouwbaarheid',
+                ['zeker', 'vermoedelijk'],
+                key='schooldam_form_conf',
+            )
+            note_in = st.text_area('Toelichting (optioneel)', height=60, key='schooldam_form_note')
+            fg_opt = st.text_input(
+                'Gemeente voor filter (optioneel)',
+                placeholder="Als DUO-afwijkend, bv. 's-Gravenhage i.p.v. Den Haag",
+                key='schooldam_form_fg',
+            )
+            submitted = st.form_submit_button('Opslaan in bestand')
+            if submitted:
+                from schooldam_hotspots import add_entries as _sd_add
+
+                gem_v = ' '.join((gem_in or '').split()).strip()
+                pl_v = ' '.join((pl_in or '').split()).strip()
+                if gem_v and pl_v:
+                    try:
+                        n_ad = _sd_add(
+                            [{
+                                'land': add_land.strip().upper(),
+                                'gemeente': gem_v,
+                                'plaats': pl_v,
+                                'confidence': conf_in,
+                                'note': note_in.strip(),
+                                'filter_gemeente': fg_opt.strip(),
+                            }],
+                        )
+                        if n_ad:
+                            st.success(f'{n_ad} toegevoegd.')
+                            try:
+                                _schooldam_hotspots_geocoded.clear()
+                            except Exception:
+                                pass
+                            time.sleep(0.2)
+                            st.rerun()
+                        else:
+                            st.warning('Niet toegevoegd (bestond al of onvolledig).')
+                    except OSError as exc:
+                        st.error(f'Kon JSON niet schrijven (alleen-lezen?): {exc}')
+                else:
+                    st.warning('Vul gemeente en plaats in.')
     if not show_clubs_on_map:
         st.session_state.pop('school_map_club_popup', None)
 
@@ -887,7 +1018,50 @@ def render_schools(db, map_height: int):
                     gm, 'latitude', 'longitude', land_code,
                 )
 
-        if valid_schools.empty and valid_clubs.empty and valid_gemeenten.empty:
+        valid_hotspots = pd.DataFrame()
+        invalid_hotspots = 0
+        if show_schooldam_hotspots:
+            from schooldam_hotspots import entries_for_land, load_hotspots
+
+            ent_sd = entries_for_land(load_hotspots(), land_code)
+            sig_sd = hashlib.sha256(
+                json.dumps(ent_sd, sort_keys=True, ensure_ascii=False).encode('utf-8'),
+            ).hexdigest()
+            raw_hot = _schooldam_hotspots_geocoded(land_code, sig_sd)
+            valid_hotspots, invalid_hotspots = _prepare_map_coords_df(
+                raw_hot, 'latitude', 'longitude', land_code,
+            )
+            if not valid_hotspots.empty:
+                if land_code == 'NL':
+                    from schooldam_hotspots import resolve_pick_gemeente
+
+                    pool_lc = {
+                        str(g).strip().lower(): str(g).strip()
+                        for g in df['gemeente'].dropna().unique() if str(g).strip()
+                    }
+                    v2 = valid_hotspots.copy()
+                    v2['gemeentenaam'] = v2.apply(
+                        lambda r: resolve_pick_gemeente(
+                            hotspot_id=str(r['hotspot_id']),
+                            gemeente=str(r['gemeente']),
+                            filter_gemeente=str(r.get('filter_gemeente') or ''),
+                            pool_lc=pool_lc,
+                        ),
+                        axis=1,
+                    )
+                    valid_hotspots = v2
+                else:
+                    valid_hotspots = valid_hotspots.copy()
+                    valid_hotspots['gemeentenaam'] = valid_hotspots['gemeente'].astype(str)
+
+        map_has_points = (
+            not valid_schools.empty
+            or not valid_clubs.empty
+            or not valid_gemeenten.empty
+            or (show_schooldam_hotspots and not valid_hotspots.empty)
+        )
+
+        if not map_has_points:
             st.info(_map_empty_messages(
                 land_code,
                 land_choice,
@@ -899,6 +1073,15 @@ def render_schools(db, map_height: int):
                 show_clubs_on_map,
                 clubs_raw,
             ))
+            if show_schooldam_hotspots:
+                from schooldam_hotspots import entries_for_land, load_hotspots
+
+                n_sd = len(entries_for_land(load_hotspots(), land_code))
+                if n_sd:
+                    st.caption(
+                        f'Schooldammen-overlay aan ({n_sd} adressen in bestand) maar geen bruikbare '
+                        'coördinaten — controleer geocode / netwerk.'
+                    )
         else:
             lats: List[float] = []
             lons: List[float] = []
@@ -911,6 +1094,9 @@ def render_schools(db, map_height: int):
             if not valid_gemeenten.empty:
                 lats.extend(valid_gemeenten['latitude'].astype(float).tolist())
                 lons.extend(valid_gemeenten['longitude'].astype(float).tolist())
+            if show_schooldam_hotspots and not valid_hotspots.empty:
+                lats.extend(valid_hotspots['latitude'].astype(float).tolist())
+                lons.extend(valid_hotspots['longitude'].astype(float).tolist())
 
             zoom_close = 12.8
             center_lat = float(pd.Series(lats).median())
@@ -951,6 +1137,9 @@ def render_schools(db, map_height: int):
             if not valid_gemeenten.empty:
                 valid_gemeenten = valid_gemeenten.copy()
                 valid_gemeenten['website_link'] = ''
+            if show_schooldam_hotspots and not valid_hotspots.empty:
+                valid_hotspots = valid_hotspots.copy()
+                valid_hotspots['website_link'] = ''
 
             tooltip = {
                 'html': '<b>{naam}</b><br/>{map_tip_line}<br/>{plaats}{website_link}',
@@ -977,6 +1166,48 @@ def render_schools(db, map_height: int):
                         auto_highlight=True,
                     )
                 )
+            if show_schooldam_hotspots and not valid_hotspots.empty:
+                conf_s = valid_hotspots['confidence'].fillna('zeker').astype(str).str.strip().str.lower()
+                hz = valid_hotspots[conf_s == 'zeker'].copy()
+                ho = valid_hotspots[conf_s != 'zeker'].copy()
+                if not hz.empty:
+                    layers.append(
+                        pdk.Layer(
+                            'ScatterplotLayer',
+                            data=hz,
+                            id='schooldam_hotspot_zeker',
+                            pickable=True,
+                            opacity=0.88,
+                            stroked=True,
+                            filled=True,
+                            radius_min_pixels=7,
+                            radius_max_pixels=22,
+                            get_position='[longitude, latitude]',
+                            get_fill_color='[160, 40, 160, 210]',
+                            get_line_color='[255, 255, 255]',
+                            get_radius=1650,
+                            auto_highlight=True,
+                        )
+                    )
+                if not ho.empty:
+                    layers.append(
+                        pdk.Layer(
+                            'ScatterplotLayer',
+                            data=ho,
+                            id='schooldam_hotspot_vermoedelijk',
+                            pickable=True,
+                            opacity=0.82,
+                            stroked=True,
+                            filled=True,
+                            radius_min_pixels=6,
+                            radius_max_pixels=20,
+                            get_position='[longitude, latitude]',
+                            get_fill_color='[240, 160, 40, 200]',
+                            get_line_color='[90, 50, 10]',
+                            get_radius=1550,
+                            auto_highlight=True,
+                        )
+                    )
             if not valid_clubs.empty:
                 layers.append(
                     pdk.Layer(
@@ -1092,10 +1323,18 @@ def render_schools(db, map_height: int):
             )
             _apply_school_map_pick(sel, filtered_reset, db['clubs'], gem_key, pending_gem_key)
             cap = '**Lichtblauw** = school (klik = selectie).'
+            if show_schooldam_hotspots and not valid_hotspots.empty:
+                vc = valid_hotspots['confidence'].fillna('zeker').astype(str).str.strip().str.lower()
+                n_z = int((vc == 'zeker').sum())
+                n_o = len(valid_hotspots) - n_z
+                cap += (
+                    f' **Paars** = schooldam (zeker, {n_z}); **oranje** = vermoedelijk ({n_o}); '
+                    'klik = gemeente in filter.'
+                )
             if not valid_gemeenten.empty:
                 cap += f' **Groen** = gemeente ({len(valid_gemeenten)}; klik = gemeentefilter).'
             if not valid_clubs.empty:
-                cap += f' **Oranje** = damclub ({len(valid_clubs)}; klik = gegevens).'
+                cap += f' **Oranje (club)** = damclub ({len(valid_clubs)}; klik = gegevens).'
             st.caption(cap)
             warn_parts = []
             if invalid_schools:
@@ -1105,6 +1344,10 @@ def render_schools(db, map_height: int):
             if invalid_clubs:
                 warn_parts.append(
                     f'{invalid_clubs} clubpunt(en) met ongeldige coördinaten niet getoond.'
+                )
+            if invalid_hotspots and show_schooldam_hotspots:
+                warn_parts.append(
+                    f'{invalid_hotspots} schooldam-punt(en) met ongeldige coördinaten overgeslagen.'
                 )
             if warn_parts:
                 st.warning(' '.join(warn_parts))
