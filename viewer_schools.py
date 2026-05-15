@@ -519,12 +519,6 @@ def render_schools(db, map_height: int):
     sid_map = st.session_state.selected_school_id
 
     with col_map:
-        st.subheader('Kaart')
-        st.caption(
-            'Kaartlagen (gemeenten / damclubs) staan in de **zijbalk**. '
-            'Lichtblauw = school, groen = gemeente, oranje = damclub.'
-        )
-
         nl_lat_lo, nl_lat_hi = 50.5, 53.7
         nl_lon_lo, nl_lon_hi = 3.0, 7.5
 

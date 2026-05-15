@@ -304,7 +304,6 @@ def render_clubs(map_height):
     selected_id_for_map = st.session_state.selected_club_id
 
     with col_map:
-        st.subheader('Kaart')
         map_df = filtered_reset[['naam', 'plaats', 'website', 'lat', 'lon', '_id']].dropna(subset=['lat', 'lon'])
         if map_df.empty:
             st.info('Geen coördinaten in deze selectie. Laat de scraper geocoden of vul lat/lon handmatig in.')
