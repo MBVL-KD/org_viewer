@@ -10,6 +10,8 @@ from pymongo import MongoClient
 import pandas as pd
 import pydeck as pdk
 
+from nl_provincie import canonical_nl_provincie_club
+
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 ENV_CANDIDATES = [ROOT / 'Editor' / 'server' / '.env', ROOT / 'Editor' / '.env', ROOT / '.env']
@@ -124,6 +126,16 @@ TABLE_HEADER_PX = 52
 CLUB_TABLE_HEIGHT = LIST_VISIBLE_ROWS * TABLE_ROW_PX + TABLE_HEADER_PX
 
 
+def _bond_filter_label(bond_code: str) -> str:
+    code = str(bond_code or '').strip()
+    if not code:
+        return ''
+    prov = canonical_nl_provincie_club(code)
+    if prov and prov != code:
+        return f'{code} ({prov})'
+    return code
+
+
 def _pydeck_first_picked_object(selection):
     """Parse PydeckState (selection.objects) en oudere selectie-vormen."""
     if selection is None:
@@ -209,13 +221,14 @@ def render_clubs(map_height):
     df = pd.DataFrame(rows)
     show_sidebar = st.sidebar
     show_sidebar.header('Filters')
-    province_opts = sorted(df['provincie'].dropna().unique().tolist())
+    bond_opts = sorted(df['provincie'].dropna().unique().tolist(), key=lambda c: _bond_filter_label(c).lower())
     province_filter = show_sidebar.multiselect(
-        'Provincie',
-        options=province_opts,
+        'Bond',
+        options=bond_opts,
         default=[],
         key='club_filter_prov',
-        help='Geen selectie = alle provincies. Meerdere provincies: OR.',
+        format_func=_bond_filter_label,
+        help='Geen selectie = alle bonden. Meerdere bonden: OR. Tussen haakjes: provincie.',
     )
     website_only = show_sidebar.checkbox('Alleen clubs met website', value=False)
 
