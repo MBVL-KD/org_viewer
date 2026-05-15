@@ -615,6 +615,44 @@ def render_schools(db, map_height: int):
             }
 
             layers = []
+            if not valid_schools.empty:
+                layers.append(
+                    pdk.Layer(
+                        'ScatterplotLayer',
+                        data=valid_schools,
+                        id='school_layer',
+                        pickable=True,
+                        opacity=0.85,
+                        stroked=True,
+                        filled=True,
+                        radius_min_pixels=8,
+                        radius_max_pixels=36,
+                        get_position='[longitude, latitude]',
+                        get_fill_color='[160, 180, 240, 170]',
+                        get_line_color='[255, 255, 255]',
+                        get_radius=2000,
+                        auto_highlight=True,
+                    )
+                )
+            if not valid_clubs.empty:
+                layers.append(
+                    pdk.Layer(
+                        'ScatterplotLayer',
+                        data=valid_clubs,
+                        id='school_map_clubs',
+                        pickable=True,
+                        opacity=0.78,
+                        stroked=True,
+                        filled=True,
+                        radius_min_pixels=6,
+                        radius_max_pixels=24,
+                        get_position='[longitude, latitude]',
+                        get_fill_color='[235, 115, 35, 200]',
+                        get_line_color='[90, 40, 10]',
+                        get_radius=1700,
+                        auto_highlight=True,
+                    )
+                )
             if not valid_gemeenten.empty:
                 gm_plain = valid_gemeenten[~valid_gemeenten['gemeente_selected']].copy()
                 gm_sel = valid_gemeenten[valid_gemeenten['gemeente_selected']].copy()
@@ -668,44 +706,6 @@ def render_schools(db, map_height: int):
                         get_color='[25, 70, 25, 230]',
                         get_text_anchor='"middle"',
                         get_alignment_baseline='"bottom"',
-                    )
-                )
-            if not valid_schools.empty:
-                layers.append(
-                    pdk.Layer(
-                        'ScatterplotLayer',
-                        data=valid_schools,
-                        id='school_layer',
-                        pickable=True,
-                        opacity=0.85,
-                        stroked=True,
-                        filled=True,
-                        radius_min_pixels=8,
-                        radius_max_pixels=36,
-                        get_position='[longitude, latitude]',
-                        get_fill_color='[160, 180, 240, 170]',
-                        get_line_color='[255, 255, 255]',
-                        get_radius=2000,
-                        auto_highlight=True,
-                    )
-                )
-            if not valid_clubs.empty:
-                layers.append(
-                    pdk.Layer(
-                        'ScatterplotLayer',
-                        data=valid_clubs,
-                        id='school_map_clubs',
-                        pickable=True,
-                        opacity=0.78,
-                        stroked=True,
-                        filled=True,
-                        radius_min_pixels=6,
-                        radius_max_pixels=24,
-                        get_position='[longitude, latitude]',
-                        get_fill_color='[235, 115, 35, 200]',
-                        get_line_color='[90, 40, 10]',
-                        get_radius=1700,
-                        auto_highlight=True,
                     )
                 )
             if not sel_m.empty:
