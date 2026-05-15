@@ -194,15 +194,14 @@ def _apply_school_map_pick(selection, filtered_reset_df, clubs_coll):
         return
     gn = picked.get('gemeentenaam')
     if gn and str(gn).strip():
-        # We mogen de key van een bestaand widget niet direct aanpassen ná
-        # aanmaak; zet een pending waarde en forceer een rerun.
         gn = str(gn).strip()
         current = list(st.session_state.get('school_filter_gem', []))
+        # Pydeck houdt de klik-selectie vast na rerun: niet opnieuw rerunnen als al in filter.
         if gn not in current:
             current.append(gn)
-        st.session_state['_pending_school_filter_gem'] = current
-        st.session_state.pop('school_map_club_popup', None)
-        st.rerun()
+            st.session_state['_pending_school_filter_gem'] = current
+            st.session_state.pop('school_map_club_popup', None)
+            st.rerun()
         return
     cid = picked.get('club_id')
     if cid:
